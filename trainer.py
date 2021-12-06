@@ -53,23 +53,10 @@ class trainer(object):
                 self.loss_fn = torch.nn.functional.nll_loss
                 self.data.to(self.device)
         else:
-            self.data = prepare_edge_data(self.args).to(self.device)
+            self.data = prepare_edge_data(self.args, self.which_run).to(self.device)
             self.loss_fn = torch.nn.BCEWithLogitsLoss()
-            # self.train_loader = train_loader`
-            # self.val_loader = val_loader
-            # self.test_loader = test_loader
 
     def train_and_test(self):
-        # best_stats = {'acc_val': 0,
-        #               'best_train_loss': 0,
-        #               'best_test_acc': 0,
-        #               'best_train_acc': 0,
-        #               'best_val_loss': 100}
-        # best_val_acc = 0.
-        # best_train_loss = 100
-        # best_test_acc = 0.
-        # best_train_acc = 0.
-        # best_val_loss = 100.
         best_stats = None
         patience = self.args.patience
         bad_counter = 0.
@@ -89,11 +76,6 @@ class trainer(object):
                 else:
                     if stats['valid_acc'] > best_stats['valid_acc']:
                         best_stats.update(stats)
-                        # best_val_loss = loss_val
-                        # best_test_acc = acc_test
-                        # best_val_acc = acc_val
-                        # best_train_loss = loss_train
-                        # best_train_acc = acc_train
                         bad_counter = 0
                     else:
                         bad_counter += 1
