@@ -53,6 +53,37 @@ class BaseOptions():
                             help='transductive or inductive setting')
         parser.add_argument('--activation', type=str, default="relu", required=False)
 
+        # task [node, edge, prompt]
+        parser.add_argument('--task', type=str, default='node')
+        # edge task specific parameters for data prep
+        parser.add_argument('--use-splitted', action='store_true',
+                            help='use the pre-splitted train/test data,\
+                             if False, then make a random division')
+        parser.add_argument('--data-split-num', type=str, default='10',
+                            help='If use-splitted is true, choose one of splitted data')
+        parser.add_argument('--test-ratio', type=float, default=0.1,
+                            help='ratio of test links')
+        parser.add_argument('--val-ratio', type=float, default=0.05,
+                            help='ratio of validation links. If using the splitted data from SEAL,\
+                             it is the ratio on the observed links, othewise, it is the ratio on the whole links.')
+        parser.add_argument('--practical-neg-sample', type=bool, default=False,
+                            help='only see the train positive edges when sampling negative')
+        # setups in peparing the training set
+        parser.add_argument('--observe-val-and-injection', action='store_true',
+                            help='whether to contain the validation set in the observed graph and apply injection trick')
+        parser.add_argument('--num-hops', type=int, default=2,
+                            help='number of hops in sampling subgraph')
+        parser.add_argument('--max-nodes-per-hop', type=int, default=None)
+
+        # prepare initial node attributes for those graphs do not have
+        parser.add_argument('--init-attribute', action='store_true',
+                            help='initial attribute for graphs without node attributes\
+                            , options: n2v, one_hot, spc, ones, zeros, None')
+        # batch size for edge
+        parser.add_argument('--batch-size', type=int, default=32)
+        parser.add_argument('--edge-criterion', type=str, default='logit')
+
+        ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,
                             help="residual weight for input embedding")
@@ -93,6 +124,11 @@ class BaseOptions():
             args.patience = 100
             args.dim_hidden = 64
             args.activation = 'relu'
+            # edge task specific
+            args.use_splitted = False
+            args.practical_neg_sample = True
+            args.observe_val_and_injection = False
+            args.init_attribute = False
 
             # args.N_exp = 100
 
@@ -106,6 +142,11 @@ class BaseOptions():
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
+            # edge task specific
+            args.use_splitted = False
+            args.practical_neg_sample = True
+            args.observe_val_and_injection = False
+            args.init_attribute = False
 
         elif args.dataset == 'Citeseer':
             args.num_feats = 3703
@@ -121,6 +162,11 @@ class BaseOptions():
             args.activation = 'relu'
 
             args.res_alpha = 0.2
+            # edge task specific
+            args.use_splitted = False
+            args.practical_neg_sample = True
+            args.observe_val_and_injection = False
+            args.init_attribute = False
 
         elif args.dataset == 'ogbn-arxiv':
             args.num_feats = 128

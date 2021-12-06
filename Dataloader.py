@@ -7,7 +7,7 @@ import torch_geometric.transforms as T
 from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.datasets import Planetoid, Coauthor, WebKB, Actor, Amazon
 from torch_geometric.utils import remove_self_loops, add_self_loops, to_undirected, to_networkx
-
+from utils import *
 
 def load_ogbn(dataset='ogbn-arxiv'):
     dataset = PygNodePropPredDataset(name=dataset)
@@ -125,3 +125,58 @@ def load_data(dataset, which_run):
     else:
         data.edge_index = edge_index
     return data
+
+def prepare_edge_data(args):
+    # load data from .mat or download from Planetoid dataset.
+
+    if args.dataset.lower() in ('cora', 'citeseer', 'pubmed'):
+        data = load_Planetoid_data(args)
+        data = split_edges(data, args)
+    else:
+        if args.use_splitted == True:  # use splitted train/val/test
+            data = load_splitted_data(args)
+        else:
+            data = load_unsplitted_data(args)
+            data = split_edges(data, args)
+    return data
+    # # set_random_seed(args.seed)
+    # data_observed, feature_results = set_init_attribute_representation(data, args)
+    #
+    # # Construct train, val and test data loader.
+    # # set_random_seed(args.seed)
+    # train_graphs = []
+    # val_graphs = []
+    # test_graphs = []
+    # import pdb; pdb.set_trace()
+    # for i in range(data.train_pos.size(1)):
+    #     train_graphs.append(minus_edge(data_observed, 1, data.train_pos[:, i], args))
+    #
+    # for i in range(data.train_neg.size(1)):
+    #     train_graphs.append(plus_edge(data_observed, 0, data.train_neg[:, i], args))
+    #
+    # for i in range(data.test_pos.size(1)):
+    #     test_graphs.append(plus_edge(data_observed, 1, data.test_pos[:, i], args))
+    #
+    # for i in range(data.test_neg.size(1)):
+    #     test_graphs.append(plus_edge(data_observed, 0, data.test_neg[:, i], args))
+    # if args.observe_val_and_injection == False:
+    #     for i in range(data.val_pos.size(1)):
+    #         val_graphs.append(plus_edge(data_observed, 1, data.val_pos[:, i], args))
+    #
+    #     for i in range(data.val_neg.size(1)):
+    #         val_graphs.append(plus_edge(data_observed, 0, data.val_neg[:, i], args))
+    # else:
+    #     for i in range(data.val_pos.size(1)):
+    #         val_graphs.append(minus_edge(data_observed, 1, data.val_pos[:, i], args))
+    #
+    #     for i in range(data.val_neg.size(1)):
+    #         val_graphs.append(plus_edge(data_observed, 0, data.val_neg[:, i], args))
+    #
+    # print('Train_link:', str(len(train_graphs)), ' Val_link:', str(len(val_graphs)), ' Test_link:',
+    #       str(len(test_graphs)))
+    #
+    # train_loader = DataLoader(train_graphs, batch_size=args.batch_size, shuffle=True)
+    # val_loader = DataLoader(val_graphs, batch_size=args.batch_size, shuffle=True)
+    # test_loader = DataLoader(test_graphs, batch_size=args.batch_size, shuffle=False)
+    #
+    # return train_loader, val_loader, test_loader, feature_results

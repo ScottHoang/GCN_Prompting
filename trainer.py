@@ -4,10 +4,11 @@ import torch
 import torch.nn.functional as F
 from ogb.nodeproppred import Evaluator
 
-from Dataloader import load_data, load_ogbn
-from tricks import TricksComb, TricksCombSGC
+from Dataloader import load_data, load_ogbn, prepare_edge_data
+from tricks import TricksComb #TricksCombSGC
 from utils import AcontainsB
-
+from utils import LinkPredictor
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 def evaluate(output, labels, mask):
     _, indices = torch.max(output, dim=1)
@@ -23,16 +24,13 @@ class trainer(object):
         self.device = torch.device(f'cuda:{args.cuda_num}' if args.cuda else 'cpu')
         self.which_run = which_run
         # set dataloader
-        if self.dataset == 'ogbn-arxiv':
-            self.data, self.split_idx = load_ogbn(self.dataset)
-            self.data.to(self.device)
-            self.train_idx = self.split_idx['train'].to(self.device)
-            self.evaluator = Evaluator(name='ogbn-arxiv')
-            self.loss_fn = torch.nn.functional.nll_loss
-        else:
-            self.data = load_data(self.dataset, self.which_run)
-            self.loss_fn = torch.nn.functional.nll_loss
-            self.data.to(self.device)
+        self.set_dataloader()
+        #
+        if args.task == 'edge':
+            args.num_classes = args.dim_hidden
+            self.edge_predictor = LinkPredictor(args.dim_hidden, args.dim_hidden, 1, 3,
+                                                args.dropout).to(self.device)
+            self.optimizer_edge = self.edge_predictor.optimizer
 
         if args.compare_model:  # only compare model
             Model = getattr(importlib.import_module("models"), self.type_model)
@@ -42,60 +40,94 @@ class trainer(object):
         self.model.to(self.device)
         self.optimizer = self.model.optimizer
 
+    def set_dataloader(self):
+        if self.args.task == 'node':
+            if self.dataset == 'ogbn-arxiv':
+                self.data, self.split_idx = load_ogbn(self.dataset)
+                self.data.to(self.device)
+                self.train_idx = self.split_idx['train'].to(self.device)
+                self.evaluator = Evaluator(name='ogbn-arxiv')
+                self.loss_fn = torch.nn.functional.nll_loss
+            else:
+                self.data = load_data(self.dataset, self.which_run)
+                self.loss_fn = torch.nn.functional.nll_loss
+                self.data.to(self.device)
+        else:
+            self.data = prepare_edge_data(self.args).to(self.device)
+            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+            # self.train_loader = train_loader`
+            # self.val_loader = val_loader
+            # self.test_loader = test_loader
+
     def train_and_test(self):
-        best_val_acc = 0.
-        best_train_loss = 100
-        best_test_acc = 0.
-        best_train_acc = 0.
-        best_val_loss = 100.
+        # best_stats = {'acc_val': 0,
+        #               'best_train_loss': 0,
+        #               'best_test_acc': 0,
+        #               'best_train_acc': 0,
+        #               'best_val_loss': 100}
+        # best_val_acc = 0.
+        # best_train_loss = 100
+        # best_test_acc = 0.
+        # best_train_acc = 0.
+        # best_val_loss = 100.
+        best_stats = None
         patience = self.args.patience
         bad_counter = 0.
-        val_loss_history = []
-
-        for epoch in range(self.epochs):
-
-            acc_train, acc_val, acc_test, loss_train, loss_val = self.train_net()
-
-            val_loss_history.append(loss_val)
-
-            if self.dataset != 'ogbn-arxiv':
-                if loss_val < best_val_loss:
-                    best_val_loss = loss_val
-                    best_test_acc = acc_test
-                    best_val_acc = acc_val
-                    best_train_loss = loss_train
-                    best_train_acc = acc_train
+        # val_loss_history = []
+        for epoch in range(self.args.epochs):
+            stats = self.train_net()
+            best_stats = stats if best_stats is None else best_stats
+            if self.args.task == 'node':
+                # acc_train, acc_val, acc_test, loss_train, loss_val = self.train_net()
+                # val_loss_history.append(loss_val)
+                if self.dataset != 'ogbn-arxiv':
+                    if best_stats is None or stats['val_los'] < best_stats['val_los']:
+                        best_stats.update(stats)
+                        bad_counter = 0
+                    else:
+                        bad_counter += 1
+                else:
+                    if stats['valid_acc'] > best_stats['valid_acc']:
+                        best_stats.update(stats)
+                        # best_val_loss = loss_val
+                        # best_test_acc = acc_test
+                        # best_val_acc = acc_val
+                        # best_train_loss = loss_train
+                        # best_train_acc = acc_train
+                        bad_counter = 0
+                    else:
+                        bad_counter += 1
+            elif self.args.task == 'edge':
+                if stats['val_roc_auc'] > best_stats['val_roc_auc']:
+                    best_stats.update(stats)
                     bad_counter = 0
                 else:
                     bad_counter += 1
             else:
-                if acc_val > best_val_acc:
-                    best_val_loss = loss_val
-                    best_test_acc = acc_test
-                    best_val_acc = acc_val
-                    best_train_loss = loss_train
-                    best_train_acc = acc_train
-                    bad_counter = 0
-                else:
-                    bad_counter += 1
-
-            # if epoch % 20 == 0:
+                raise NotImplementedError
+                # if epoch % 20 == 0:
             if epoch % 20 == 0 or epoch == 1:
-                log = 'Epoch: {:03d}, Train loss: {:.4f}, Val loss: {:.4f}, Test acc: {:.4f}'
-                print(log.format(epoch, loss_train, loss_val, acc_test))
+                log = f"Epoch: {epoch:03d}, "
+                for k, v in best_stats.items():
+                    log = log + f"{k}: {v:.4f}, "
+                print(log)
             if bad_counter == patience:
-                # self.save_records(is_last=True)
-                break
+               break
 
-        print('train_loss: {:.4f}, val_acc: {:.4f}, test_acc:{:.4f}'
-              .format(best_train_loss, best_val_acc, best_test_acc))
-        return best_train_loss, best_val_acc, best_test_acc
+        log = ''
+        for k, v in best_stats.items():
+            log = log + f"{k}: {v:.4f}, "
+        print(log)
+        return best_stats
 
     def train_net(self):
         try:
             loss_train = self.run_trainSet()
-            acc_train, acc_val, acc_test, loss_val = self.run_testSet()
-            return acc_train, acc_val, acc_test, loss_train, loss_val
+            stats = self.run_testSet()
+            stats['loss_train'] = loss_train
+            return stats
+
+            # return acc_train, acc_val, acc_test, loss_train, loss_val
         except RuntimeError as e:
             if "cuda" in str(e) or "CUDA" in str(e):
                 print(e)
@@ -103,6 +135,16 @@ class trainer(object):
                 raise e
 
     def run_trainSet(self):
+        if self.args.task == 'node':
+            return self.node_train()
+        elif self.args.task == 'edge':
+            return self.edge_train()
+        elif self.args.task == 'prompt':
+            pass
+        else:
+            raise NotImplementedError
+
+    def node_train(self):
         self.model.train()
         loss = 0.
         if self.dataset == 'ogbn-arxiv':
@@ -124,8 +166,65 @@ class trainer(object):
 
         return loss.item()
 
+    def edge_train(self):
+        self.model.train()
+        self.edge_predictor.train()
+        loss_epoch = 0
+        embs = self.model(self.data.x, self.data.edge_index)
+        pos_prediction = self.edge_predictor(embs[self.data.train_pos[0,:]],
+                                              embs[self.data.train_pos[1,:]])
+        neg_prediction = self.edge_predictor(embs[self.data.train_neg[0,:]],
+                                              embs[self.data.train_neg[1,:]])
+
+        loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(self.device)) + \
+               self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(self.device))
+
+        self.optimizer.zero_grad()
+        self.optimizer_edge.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer_edge.step()
+        return loss.item()
+
+    def edge_test(self):
+        self.model.eval()
+        self.edge_predictor.eval()
+
+        embs = self.model(self.data.x, self.data.edge_index)
+        #  val
+        val_pred_pos = torch.sigmoid(self.edge_predictor(embs[self.data.val_pos[0,:]],
+                                                         embs[self.data.val_pos[1:]]))
+        val_pred_neg = torch.sigmoid(self.edge_predictor(embs[self.data.val_neg[0,:]],
+                                                         embs[self.data.val_neg[1:]]))
+        val_pred = torch.cat([val_pred_pos, val_pred_neg], dim=0).squeeze(-1).cpu()
+        val_labels = torch.cat([torch.ones(val_pred_pos.shape), torch.zeros(val_pred_neg.shape)]).squeeze(-1).cpu()
+        val_roc_auc = roc_auc_score(val_labels, val_pred)
+        val_ap = average_precision_score(val_labels, val_pred)
+        #  test
+        test_pred_pos = self.edge_predictor(embs[self.data.test_pos[0,:]], embs[self.data.test_pos[1:]])
+        test_pred_neg = self.edge_predictor(embs[self.data.test_neg[0,:]], embs[self.data.test_neg[1:]])
+        test_pred = torch.cat([test_pred_pos, test_pred_neg], dim=0).squeeze(-1).cpu()
+        test_labels = torch.cat([torch.ones(test_pred_pos.shape), torch.zeros(test_pred_neg.shape)]).squeeze(-1).cpu()
+        test_roc_auc = roc_auc_score(test_labels, test_pred)
+        test_ap = average_precision_score(test_labels, test_pred)
+
+        return {'valid_acc': val_ap, 'val_roc_auc': val_roc_auc,
+                'test_acc': test_ap, 'test_roc_auc': test_roc_auc}
+
+
     @torch.no_grad()
     def run_testSet(self):
+        if self.args.task == 'node':
+            return self.node_test()
+        elif self.args.task == 'edge':
+            return self.edge_test()
+        elif self.args.task == 'prompt':
+            pass
+        else:
+            raise NotImplementedError
+
+
+    def node_test(self):
         self.model.eval()
         # torch.cuda.empty_cache()
         if self.dataset == 'ogbn-arxiv':
@@ -146,7 +245,7 @@ class trainer(object):
                 'y_pred': y_pred[self.split_idx['test']],
             })['acc']
 
-            return train_acc, valid_acc, test_acc, 0.
+            return {'train_acc':train_acc, 'valid_acc':valid_acc, 'test_acc':test_acc, "val_los":0}
 
         else:
             logits = self.model(self.data.x, self.data.edge_index)
@@ -155,4 +254,5 @@ class trainer(object):
             acc_val = evaluate(logits, self.data.y, self.data.val_mask)
             acc_test = evaluate(logits, self.data.y, self.data.test_mask)
             val_loss = self.loss_fn(logits[self.data.val_mask], self.data.y[self.data.val_mask])
-            return acc_train, acc_val, acc_test, val_loss
+            return {'train_acc':acc_train, 'valid_acc':acc_val,
+                    'test_acc':acc_test, "val_los":val_loss.item()}
