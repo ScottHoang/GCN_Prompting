@@ -1,3 +1,4 @@
+import collections
 import importlib
 
 import torch
@@ -9,7 +10,9 @@ from Dataloader import load_data, load_ogbn, prepare_edge_data
 from tricks import TricksComb #TricksCombSGC
 from utils import AcontainsB
 from utils import LinkPredictor
+from utils import StratifiedSampler
 from sklearn.metrics import roc_auc_score, average_precision_score
+import numpy as np
 
 def evaluate(output, labels, mask):
     _, indices = torch.max(output, dim=1)
@@ -83,6 +86,9 @@ class trainer(object):
             elif self.args.task == 'edge':
                 if stats['val_roc_auc'] > best_stats['val_roc_auc']:
                     best_stats.update(stats)
+                    with torch.no_grad():
+                        node_correct = self.edge_pred_node_classifiy()
+                        best_stats['node_acc'] = node_correct
                     bad_counter = 0
                 else:
                     bad_counter += 1
@@ -214,6 +220,52 @@ class trainer(object):
 
         return {'valid_acc': val_ap, 'val_roc_auc': val_roc_auc,
                 'test_acc': test_ap, 'test_roc_auc': test_roc_auc}
+
+    def edge_pred_node_classifiy(self):
+        self.model.eval()
+        self.edge_predictor.eval()
+        # maybe equally sampled all classes
+        x_j, y_sampled = self.sampled_y_class()
+        y = self.data.y.cpu()
+        total = int(self.data.x.size(0))
+        # edges = torch.zeros(2, self.data.x.size(0) * len(x_j))
+        emb = self.model(self.data.x, self.data.edge_index)
+        correct = 0
+        for i in range(self.data.x.size(0)):
+            dense_link = torch.sigmoid(self.edge_predictor(emb[[i]*len(x_j)], emb[x_j])).squeeze()
+            labels = collections.Counter(y_sampled[dense_link >= 0.8].cpu().tolist())
+            if len(labels.keys()):
+                pred_class= max(labels, key=labels.get)
+                correct += int(pred_class == y[i])
+
+        correct /= total
+        return correct
+
+            # edges[0,len(x_j)*i:len(x_j)*i+len(x_j)] = i
+            # edges[1,len(x_j)*i:len(x_j)*i+len(x_j)] = torch.tensor(x_j)
+
+        # import pdb; pdb.set_trace()
+
+
+    def sampled_y_class(self):
+        y = self.data.y.cpu()
+        num_classes = max(y).item() + 1
+        idxAy = [[i, j.item()] for i, j in enumerate(y)]
+        idxAy = sorted(idxAy, key=lambda x: x[1])
+        # print(idxAy)
+        x_j = []
+        c_i = 0
+        for i in range(len(idxAy)-1):
+            if idxAy[i+1][-1] != idxAy[i][-1]:
+                sample_class = np.random.choice([i[0] for i in idxAy[c_i:i+1]], 100)
+                x_j.extend(sample_class)
+                c_i = i+1
+        sample_class = np.random.choice([i[0] for i in idxAy[c_i::]], 100)
+        x_j.extend(sample_class)
+        y_sampled = y[x_j]
+        return x_j, y_sampled
+
+
 
 
     @torch.no_grad()
