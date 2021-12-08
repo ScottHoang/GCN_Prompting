@@ -71,9 +71,6 @@ class BaseOptions():
         # setups in peparing the training set
         parser.add_argument('--observe-val-and-injection', action='store_true',
                             help='whether to contain the validation set in the observed graph and apply injection trick')
-        parser.add_argument('--num-hops', type=int, default=2,
-                            help='number of hops in sampling subgraph')
-        parser.add_argument('--max-nodes-per-hop', type=int, default=None)
 
         # prepare initial node attributes for those graphs do not have
         parser.add_argument('--init-attribute', action='store_true',
@@ -81,7 +78,10 @@ class BaseOptions():
                             , options: n2v, one_hot, spc, ones, zeros, None')
         # batch size for edge
         parser.add_argument('--batch-size', type=int, default=32)
-        parser.add_argument('--edge-criterion', type=str, default='logit')
+        # prompt parameters
+        parser.add_argument('--prompt-k', type=int, default=5)
+        parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
+
 
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
@@ -120,7 +120,7 @@ class BaseOptions():
             args.dropout = 0.6  # 0.5
             args.lr = 0.005  # 0.005
             args.weight_decay = 5e-4
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 64
             args.activation = 'relu'
@@ -138,7 +138,7 @@ class BaseOptions():
             args.dropout = 0.5
             args.lr = 0.01
             args.weight_decay = 5e-4
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -156,7 +156,7 @@ class BaseOptions():
             args.lr = 0.01
             args.lamda = 0.6
             args.weight_decay = 5e-4
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -174,7 +174,7 @@ class BaseOptions():
             args.dropout = 0.1
             args.lr = 0.005
             args.weight_decay = 0.
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 200
             args.dim_hidden = 256
 
@@ -183,7 +183,7 @@ class BaseOptions():
         # ========== below are other datasets ==========
 
         elif args.dataset == 'CoauthorPhysics':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -198,7 +198,7 @@ class BaseOptions():
 
 
         elif args.dataset == 'CoauthorCS':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -214,7 +214,7 @@ class BaseOptions():
 
 
         elif args.dataset == 'TEXAS':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -232,7 +232,7 @@ class BaseOptions():
 
 
         elif args.dataset == 'WISCONSIN':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -248,7 +248,7 @@ class BaseOptions():
 
 
         elif args.dataset == 'CORNELL':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -264,7 +264,7 @@ class BaseOptions():
 
 
         elif args.dataset == 'ACTOR':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -279,7 +279,7 @@ class BaseOptions():
             args.res_alpha = 0.9
 
         elif args.dataset == 'AmazonComputers':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
@@ -292,7 +292,7 @@ class BaseOptions():
             args.weight_decay = 5e-5
 
         elif args.dataset == 'AmazonPhoto':
-            args.epochs = 1000
+            # args.epochs = 1000
             args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'

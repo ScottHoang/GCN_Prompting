@@ -76,26 +76,30 @@ def overwrite_with_yaml(args, model, dataset):
     return args
 
 
-class LinkPredictor(torch.nn.Module):
+class TaskPredictor(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
-                 dropout):
-        super(LinkPredictor, self).__init__()
+                 dropout, lr):
+        super(TaskPredictor, self).__init__()
 
         self.lins = torch.nn.ModuleList()
         self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
         for _ in range(num_layers - 2):
-            self.lins.append(torch.nn.Linear(hidden_channels, hidden_channels))
+            self.lins.append(torch.nn.Linear(hidden_channels, hidden_channels//2))
+            hidden_channels = hidden_channels // 2
         self.lins.append(torch.nn.Linear(hidden_channels, out_channels))
 
         self.dropout = dropout
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=0.0005)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
     def reset_parameters(self):
         for lin in self.lins:
             lin.reset_parameters()
 
-    def forward(self, x_i, x_j):
-        x = x_i * x_j
+    def forward(self, x_i, x_j=None):
+        if x_j is not None:
+            x = x_i * x_j
+        else:
+            x = x_i
         for lin in self.lins[:-1]:
             x = lin(x)
             x = F.relu(x)
