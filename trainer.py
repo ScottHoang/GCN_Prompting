@@ -14,7 +14,7 @@ from utils import StratifiedSampler
 from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 from torch_geometric.data import GraphSAINTRandomWalkSampler, GraphSAINTNodeSampler
-
+from copy import deepcopy
 
 def evaluate(output, labels, mask):
     _, indices = torch.max(output, dim=1)
@@ -50,20 +50,25 @@ class trainer(object):
         self.optimizer = self.model.optimizer
 
     def init_node_predictor(self):
-        args = self.args
-        if args.task  == 'dt':
-            node_predictor = TaskPredictor(args.dim_hidden, args.dim_hidden, self.num_classes, 3,
-                                                args.dropout, lr=self.args.lr).to(self.device)
-            optimizer_node = node_predictor.optimizer
-        elif args.task in ['dta', 'dtr']:
-            in_c = args.dim_hidden
-            if args.prompt_aggr == 'concat':
-                in_c *= (args.prompt_k+1)
-            node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, 3,
+        args = deepcopy(self.args)
+        in_c = args.dim_hidden
+        if args.prompt_aggr == 'concat' and args.task != 'dt':
+            in_c *= (args.prompt_k+1)
+        if args.prompt_head == 'mlp' :
+            node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr).to(self.device)
             optimizer_node = node_predictor.optimizer
+        elif args.prompt_head == 'gnn':
+            Model = getattr(importlib.import_module("models"), self.type_model)
+            #
+            args.num_feats = in_c
+            args.num_layers = self.args.prompt_layer
+            args.num_classes = self.num_classes
+            #
+            node_predictor  = Model(args).to(self.device)
+            optimizer_node = node_predictor.optimizer
         else:
-            raise
+            raise NotImplementedError
 
         return node_predictor, optimizer_node
 
@@ -92,7 +97,11 @@ class trainer(object):
         if self.args.task in ['node', 'edge']:
             stats_fn = self.node_stats if self.args.task == 'node' else self.edge_stats
             train_fn = lambda:self.sequential_run(self.run_trainSet, self.run_testSet)
-            return self.train_test_frame(train_fn, stats_fn=stats_fn)
+            stats = self.train_test_frame(train_fn, stats_fn=stats_fn)
+
+            if self.args.task == 'edge':
+                stats.update(self.edge2node_prediction())
+            return stats
         else:
             task = self.args.task
             # pretrain
@@ -105,11 +114,6 @@ class trainer(object):
             self.args.task = task
             self.set_dataloader()
             self.node_predictor, self.optimizer_node = self.init_node_predictor()
-            ###################################################
-            # self.node_predictor = TaskPredictor(self.args.dim_hidden, self.args.dim_hidden, self.num_classes, 3,
-            #                                     self.args.dropout, lr=0.0005).to(self.device)
-            # self.optimizer_node = self.node_predictor.optimizer
-            ###################################################
             self.model.eval()
             stat_fn = self.node_stats
             train_fn = lambda:self.sequential_run(self.node_mlp_train, self.node_mlp_test)
@@ -289,7 +293,6 @@ class trainer(object):
         test_labels = torch.cat([torch.ones(test_pred_pos.shape), torch.zeros(test_pred_neg.shape)]).squeeze(-1).cpu()
         test_roc_auc = roc_auc_score(test_labels, test_pred)
         test_ap = average_precision_score(test_labels, test_pred)
-
         return {'valid_acc': val_ap, 'val_roc_auc': val_roc_auc,
                 'test_acc': test_ap, 'test_roc_auc': test_roc_auc}
 
@@ -299,12 +302,19 @@ class trainer(object):
         loss = 0.
         if self.dataset == 'ogbn-arxiv':
             embs = self.model(self.data.x, self.data.edge_index)
-            pred = self.node_predictor(self.build_prompt(embs))
+            if self.args.prompt_head == 'mlp':
+                pred = self.node_predictor(self.build_prompt(embs))
+            else:
+                pred = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
+
             pred = F.log_softmax(pred[self.train_idx], 1)
             loss = self.loss_fn(pred, self.data.y.squeeze(1)[self.train_idx])
         else:
             embs = self.model(self.data.x, self.data.edge_index)
-            raw_logits = self.node_predictor(self.build_prompt(embs))
+            if self.args.prompt_head == 'mlp':
+                raw_logits = self.node_predictor(self.build_prompt(embs))
+            else:
+                raw_logits = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             logits = F.log_softmax(raw_logits[self.data.train_mask], 1)
             loss = self.loss_fn(logits, self.data.y[self.data.train_mask])
             # label smoothing loss
@@ -323,8 +333,11 @@ class trainer(object):
         self.node_predictor.eval()
         # torch.cuda.empty_cache()
         if self.dataset == 'ogbn-arxiv':
-            out = self.model(self.data.x, self.data.edge_index)
-            out = self.node_predictor(self.build_prompt(out))
+            embs = self.model(self.data.x, self.data.edge_index)
+            if self.args.prompt_head == 'mlp':
+                out  = self.node_predictor(self.build_prompt(embs))
+            else:
+                out = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             out = F.log_softmax(out, 1)
             y_pred = out.argmax(dim=-1, keepdim=True)
 
@@ -344,8 +357,11 @@ class trainer(object):
             return {'train_acc': train_acc, 'valid_acc': valid_acc, 'test_acc': test_acc, "val_los": 0}
 
         else:
-            logits = self.model(self.data.x, self.data.edge_index)
-            logits = self.node_predictor(self.build_prompt(logits))
+            embs = self.model(self.data.x, self.data.edge_index)
+            if self.args.prompt_head == 'mlp':
+                logits  = self.node_predictor(self.build_prompt(embs))
+            else:
+                logits = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             logits = F.log_softmax(logits, 1)
             acc_train = evaluate(logits, self.data.y, self.data.train_mask)
             acc_val = evaluate(logits, self.data.y, self.data.val_mask)
@@ -353,6 +369,53 @@ class trainer(object):
             val_loss = self.loss_fn(logits[self.data.val_mask], self.data.y[self.data.val_mask])
             return {'train_acc': acc_train, 'valid_acc': acc_val,
                     'test_acc': acc_test, "val_los": val_loss.item()}
+
+    def edge2node_prediction(self):
+        self.model.eval()
+        self.edge_predictor.eval()
+
+        embs = self.model(self.data.x, self.data.edge_index)
+
+        train_embs = embs[self.data.train_mask]
+        train_labels = self.data.y[self.data.train_mask]
+        train_counter = collections.Counter(train_labels.cpu().tolist())
+        #
+        test_embs = embs[self.data.test_mask]
+        test_labels = self.data.y[self.data.test_mask]
+        #
+        val_embs = embs[self.data.val_mask]
+        val_labels = self.data.y[self.data.val_mask]
+
+        # TODO : a bit hacky, need to figure out how to improve inference speed.
+        def get_correction(test_embs, test_labels):
+            correct = {0.25: 0, 0.5:0, 0.75:0, 0.9:0}
+            for i in range(test_embs.size(0)):
+                tile_embs = test_embs[i].tile(train_embs.size(0)).reshape(train_embs.size(0), -1)
+                pred_edges = torch.sigmoid(self.edge_predictor(tile_embs, train_embs)).squeeze()
+                for k in correct.keys():
+                    pred_labels = train_labels[pred_edges.gt(k)]
+                    class_counter = collections.Counter(pred_labels.cpu().tolist())
+                    if len(class_counter):
+                        norm_class = {k: class_counter[k]/train_counter[k] for k in train_counter.keys()}
+                        max_label = max(norm_class, key=norm_class.get)
+                        if max_label == test_labels[i]:
+                            correct[k] += 1
+            return correct
+        test_correct = get_correction(test_embs, test_labels)
+        val_correct = get_correction(val_embs, val_labels)
+        stats = {}
+        for k in test_correct.keys():
+            stats[f'test@{k}'] = test_correct[k] / test_embs.size(0)
+            stats[f'val@{k}'] = val_correct[k] / val_embs.size(0)
+        return stats
+
+
+
+
+
+
+
+
 
     @torch.no_grad()
     def run_testSet(self):
@@ -381,7 +444,7 @@ class trainer(object):
         if self.args.task == 'dt':
             return embs
         elif self.args.task == 'dtr':
-            sub_graphs = torch.cat([self.node_sampling(i) for i in range(embs.size(0))], dim=0)
+            sub_graphs = torch.cat([self.node_sampling(i) for i in range(self.data.num_nodes)], dim=0)
             embs = embs[sub_graphs]
             if self.args.prompt_aggr == 'concat':
                 embs = embs.reshape(embs.size(0), -1)

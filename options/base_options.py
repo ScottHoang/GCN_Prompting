@@ -81,8 +81,8 @@ class BaseOptions():
         # prompt parameters
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
-
-
+        parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
+        parser.add_argument('--prompt-layer', type=int, default=2)
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,
