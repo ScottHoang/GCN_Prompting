@@ -16,6 +16,7 @@ import numpy as np
 from torch_geometric.data import GraphSAINTRandomWalkSampler, GraphSAINTNodeSampler
 from copy import deepcopy
 
+
 def evaluate(output, labels, mask):
     _, indices = torch.max(output, dim=1)
     correct = torch.sum(indices[mask] == labels[mask])
@@ -40,7 +41,6 @@ class trainer(object):
             self.optimizer_edge = self.edge_predictor.optimizer
             self.node_predictor, self.optimizer_node = self.init_node_predictor()
 
-
         if args.compare_model:  # only compare model
             Model = getattr(importlib.import_module("models"), self.type_model)
             self.model = Model(args)
@@ -53,8 +53,8 @@ class trainer(object):
         args = deepcopy(self.args)
         in_c = args.dim_hidden
         if args.prompt_aggr == 'concat' and args.task != 'dt':
-            in_c *= (args.prompt_k+1)
-        if args.prompt_head == 'mlp' :
+            in_c *= (args.prompt_k + 1)
+        if args.prompt_head == 'mlp':
             node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr).to(self.device)
             optimizer_node = node_predictor.optimizer
@@ -65,7 +65,7 @@ class trainer(object):
             args.num_layers = self.args.prompt_layer
             args.num_classes = self.num_classes
             #
-            node_predictor  = Model(args).to(self.device)
+            node_predictor = Model(args).to(self.device)
             optimizer_node = node_predictor.optimizer
         else:
             raise NotImplementedError
@@ -96,7 +96,7 @@ class trainer(object):
     def train_and_test(self):
         if self.args.task in ['node', 'edge']:
             stats_fn = self.node_stats if self.args.task == 'node' else self.edge_stats
-            train_fn = lambda:self.sequential_run(self.run_trainSet, self.run_testSet)
+            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
             stats = self.train_test_frame(train_fn, stats_fn=stats_fn)
 
             if self.args.task == 'edge':
@@ -108,7 +108,7 @@ class trainer(object):
             self.args.task = 'edge'
             self.set_dataloader()
             stat_fn = self.edge_stats
-            train_fn = lambda:self.sequential_run(self.run_trainSet, self.run_testSet)
+            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
             pretrain_stats = self.train_test_frame(train_fn, stat_fn)
             # mlp train
             self.args.task = task
@@ -116,7 +116,7 @@ class trainer(object):
             self.node_predictor, self.optimizer_node = self.init_node_predictor()
             self.model.eval()
             stat_fn = self.node_stats
-            train_fn = lambda:self.sequential_run(self.node_mlp_train, self.node_mlp_test)
+            train_fn = lambda: self.sequential_run(self.node_mlp_train, self.node_mlp_test)
             stats = self.train_test_frame(train_fn, stat_fn)
             self.args.task = task
             stats.update(pretrain_stats)
@@ -293,8 +293,8 @@ class trainer(object):
         test_labels = torch.cat([torch.ones(test_pred_pos.shape), torch.zeros(test_pred_neg.shape)]).squeeze(-1).cpu()
         test_roc_auc = roc_auc_score(test_labels, test_pred)
         test_ap = average_precision_score(test_labels, test_pred)
-        return {'valid_acc': val_ap, 'val_roc_auc': val_roc_auc,
-                'test_acc': test_ap, 'test_roc_auc': test_roc_auc}
+        return {'valid_ap': val_ap, 'val_roc_auc': val_roc_auc,
+                'test_ap': test_ap, 'test_roc_auc': test_roc_auc}
 
     def node_mlp_train(self):
         self.model.eval()
@@ -335,7 +335,7 @@ class trainer(object):
         if self.dataset == 'ogbn-arxiv':
             embs = self.model(self.data.x, self.data.edge_index)
             if self.args.prompt_head == 'mlp':
-                out  = self.node_predictor(self.build_prompt(embs))
+                out = self.node_predictor(self.build_prompt(embs))
             else:
                 out = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             out = F.log_softmax(out, 1)
@@ -359,7 +359,7 @@ class trainer(object):
         else:
             embs = self.model(self.data.x, self.data.edge_index)
             if self.args.prompt_head == 'mlp':
-                logits  = self.node_predictor(self.build_prompt(embs))
+                logits = self.node_predictor(self.build_prompt(embs))
             else:
                 logits = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             logits = F.log_softmax(logits, 1)
@@ -388,7 +388,7 @@ class trainer(object):
 
         # TODO : a bit hacky, need to figure out how to improve inference speed.
         def get_correction(test_embs, test_labels):
-            correct = {0.25: 0, 0.5:0, 0.75:0, 0.9:0}
+            correct = {0.25: 0, 0.5: 0, 0.75: 0, 0.9: 0}
             for i in range(test_embs.size(0)):
                 tile_embs = test_embs[i].tile(train_embs.size(0)).reshape(train_embs.size(0), -1)
                 pred_edges = torch.sigmoid(self.edge_predictor(tile_embs, train_embs)).squeeze()
@@ -396,11 +396,12 @@ class trainer(object):
                     pred_labels = train_labels[pred_edges.gt(k)]
                     class_counter = collections.Counter(pred_labels.cpu().tolist())
                     if len(class_counter):
-                        norm_class = {k: class_counter[k]/train_counter[k] for k in train_counter.keys()}
+                        norm_class = {k: class_counter[k] / train_counter[k] for k in train_counter.keys()}
                         max_label = max(norm_class, key=norm_class.get)
                         if max_label == test_labels[i]:
                             correct[k] += 1
             return correct
+
         test_correct = get_correction(test_embs, test_labels)
         val_correct = get_correction(val_embs, val_labels)
         stats = {}
@@ -408,14 +409,6 @@ class trainer(object):
             stats[f'test@{k}'] = test_correct[k] / test_embs.size(0)
             stats[f'val@{k}'] = val_correct[k] / val_embs.size(0)
         return stats
-
-
-
-
-
-
-
-
 
     @torch.no_grad()
     def run_testSet(self):
