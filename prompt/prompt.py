@@ -4,6 +4,11 @@
 import torch
 import torch.nn as nn
 
+class Embeddings(nn.Module):
+    def __init__(self, embs):
+        super().__init__()
+        self.emb = nn.Parameter(embs, requires_grad=True)
+
 
 class GradientStorage:
     """
@@ -31,11 +36,12 @@ def hotflip_attack(averaged_grad,
             embedding_matrix,
             averaged_grad
         )
+        # gradient_dot_embedding_matrix = gradient_dot_embedding_matrix.mean(dim=-1)
         if filter is not None:
             gradient_dot_embedding_matrix -= filter
         if not increase_loss:
             gradient_dot_embedding_matrix *= -1
-        _, top_k_ids = gradient_dot_embedding_matrix.topk(num_candidates)
+        _, top_k_ids = gradient_dot_embedding_matrix.sum(dim=-1).topk(num_candidates)
 
     return top_k_ids
 

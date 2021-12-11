@@ -1,5 +1,6 @@
 import collections
 import importlib
+import random
 
 import torch
 from torch.utils.data.dataloader import DataLoader
@@ -15,6 +16,8 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 import numpy as np
 from torch_geometric.data import GraphSAINTRandomWalkSampler, GraphSAINTNodeSampler
 from copy import deepcopy
+from prompt.prompt import *
+
 
 def evaluate(output, labels, mask):
     _, indices = torch.max(output, dim=1)
@@ -40,7 +43,6 @@ class trainer(object):
             self.optimizer_edge = self.edge_predictor.optimizer
             self.node_predictor, self.optimizer_node = self.init_node_predictor()
 
-
         if args.compare_model:  # only compare model
             Model = getattr(importlib.import_module("models"), self.type_model)
             self.model = Model(args)
@@ -53,8 +55,8 @@ class trainer(object):
         args = deepcopy(self.args)
         in_c = args.dim_hidden
         if args.prompt_aggr == 'concat' and args.task != 'dt':
-            in_c *= (args.prompt_k+1)
-        if args.prompt_head == 'mlp' :
+            in_c *= (args.prompt_k + 1)
+        if args.prompt_head == 'mlp':
             node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr).to(self.device)
             optimizer_node = node_predictor.optimizer
@@ -65,15 +67,26 @@ class trainer(object):
             args.num_layers = self.args.prompt_layer
             args.num_classes = self.num_classes
             #
-            node_predictor  = Model(args).to(self.device)
+            node_predictor = Model(args).to(self.device)
             optimizer_node = node_predictor.optimizer
         else:
             raise NotImplementedError
 
         return node_predictor, optimizer_node
 
+    def init_auto_prompt(self):
+
+        # candidates = self.get_prompt_candidates()
+
+        candidates = torch.randint(0, self.data.x.size(0), (self.args.prompt_k,))
+        node_embeddings = Embeddings(self.model(self.data.x, self.data.edge_index))
+        node_embeddings_grad = GradientStorage(node_embeddings)
+
+        return candidates, node_embeddings, node_embeddings_grad
+        # grad = embedding_grad.get()
+
     def set_dataloader(self):
-        if self.args.task in ['node', 'dt', 'dtr', 'dta']:
+        if self.args.task in ['node', 'dt', 'dtr', 'prompt']:
             if self.dataset == 'ogbn-arxiv':
                 self.data, self.split_idx = load_ogbn(self.dataset)
                 self.train_idx = self.split_idx['train'].to(self.device)
@@ -83,7 +96,7 @@ class trainer(object):
                 self.data = load_data(self.dataset, self.which_run)
                 self.loss_fn = torch.nn.functional.nll_loss
 
-            if self.args.task in ['dtr', 'dta']:
+            if self.args.task in ['dtr']:
                 self.sampler = GraphSAINTRandomWalkSampler(self.data, batch_size=1, num_steps=self.data.x.size(0),
                                                            walk_length=self.args.prompt_k)
             self.data.to(self.device)
@@ -96,31 +109,101 @@ class trainer(object):
     def train_and_test(self):
         if self.args.task in ['node', 'edge']:
             stats_fn = self.node_stats if self.args.task == 'node' else self.edge_stats
-            train_fn = lambda:self.sequential_run(self.run_trainSet, self.run_testSet)
+            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
             stats = self.train_test_frame(train_fn, stats_fn=stats_fn)
 
             if self.args.task == 'edge':
                 stats.update(self.edge2node_prediction())
             return stats
-        else:
+        elif self.args.task in ['dt', 'dtr']:
             task = self.args.task
             # pretrain
             self.args.task = 'edge'
             self.set_dataloader()
             stat_fn = self.edge_stats
-            train_fn = lambda:self.sequential_run(self.run_trainSet, self.run_testSet)
+            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
             pretrain_stats = self.train_test_frame(train_fn, stat_fn)
             # mlp train
+            self.loss_fn = torch.nn.functional.nll_loss
             self.args.task = task
-            self.set_dataloader()
             self.node_predictor, self.optimizer_node = self.init_node_predictor()
             self.model.eval()
             stat_fn = self.node_stats
-            train_fn = lambda:self.sequential_run(self.node_mlp_train, self.node_mlp_test)
+            train_fn = lambda: self.sequential_run(self.node_mlp_train, self.node_mlp_test)
             stats = self.train_test_frame(train_fn, stat_fn)
             self.args.task = task
             stats.update(pretrain_stats)
             return stats
+        elif self.args.task == 'prompt':
+            # pretrain
+            task = self.args.task
+            self.args.task = 'edge'
+            self.set_dataloader()
+            stat_fn = self.edge_stats
+            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
+            pretrain_stats = self.train_test_frame(train_fn, stat_fn)
+            #########
+            self.args.task = task
+            self.loss_fn = torch.nn.functional.nll_loss
+            # self.set_dataloader()
+            self.prompt_candidates, self.node_embeddings, self.node_embeddings_grad = self.init_auto_prompt()
+            train_fn = lambda: self.sequential_run(self.prompt_search, self.prompt_test)
+            stat_fn = self.prompt_stats
+            prompt_stats = self.train_test_frame(train_fn, stat_fn)
+            return prompt_stats
+
+    def prompt_search(self):
+        prompt = self.prompt_candidates.tile(self.data.num_nodes).view(self.data.num_nodes, -1)
+        emb = self.node_embeddings.emb
+        accuracy, logits = self.edge2node_logits('train', prompt, emb)
+
+        loss = self.loss_fn(F.log_softmax(logits, dim=-1), self.data.y[self.data.train_mask])
+        loss.backward()
+        grad = emb.grad
+        token_to_flip_idx = random.randrange(self.prompt_candidates.size(0))
+        token_to_flip = self.prompt_candidates[token_to_flip_idx]
+        candidates = hotflip_attack(grad[token_to_flip].unsqueeze(0), emb, num_candidates=100)
+        avg_grad = 0
+        for c in candidates:
+            new_prompt = self.prompt_candidates.clone()
+            new_prompt[token_to_flip_idx] = c
+            new_prompt = new_prompt.tile(self.data.num_nodes).view(self.data.num_nodes, -1)
+            accuracy, logits = self.edge2node_logits('train', new_prompt, emb)
+            avg_grad += emb.grad
+
+        avg_grad /= 100
+        candidates = hotflip_attack(avg_grad[token_to_flip].unsqueeze(0), emb, num_candidates=20)
+        accuracy, logits = self.edge2node_logits('val', prompt, emb)
+        # import pdb; pdb.set_trace()
+        cur_best = accuracy
+        cur_node = token_to_flip
+        print(f"token2flip: {token_to_flip}, new candidates {candidates}")
+        for c in candidates:
+            new_prompt = self.prompt_candidates.clone()
+            new_prompt[token_to_flip_idx] = c
+            new_prompt = new_prompt.tile(self.data.num_nodes).view(self.data.num_nodes, -1)
+            accuracy, logits = self.edge2node_logits('val', new_prompt, emb)
+            print(accuracy, cur_best)
+            if accuracy[0.5] > cur_best[0.5]:
+                cur_best = accuracy
+                cur_node = c
+
+        self.prompt_candidates[token_to_flip_idx] = cur_node
+        print("#####")
+        # TODO: this still does not work; prompt candidates do not change. need fixing
+        # print(self.prompt_candidates)
+        return {'loss_train': loss.item()}
+
+    def prompt_test(self):
+        candidates = self.prompt_candidates.tile(self.data.num_nodes).view(self.data.num_nodes, -1)
+        emb = self.node_embeddings.emb
+        test_correct, test_logits = self.edge2node_logits('test', candidates, emb)
+        val_correct, val_logits = self.edge2node_logits('valid', candidates, emb)
+        stats = {}
+        for k in test_correct.keys():
+            stats[f'test@{k}'] = test_correct[k] / test_logits.size(0)
+            stats[f'val@{k}'] = val_correct[k] / val_logits.size(0)
+        return stats
 
     def node_stats(self, best_stats, stats, bad_counter):
         if self.dataset != 'ogbn-arxiv':
@@ -139,6 +222,14 @@ class trainer(object):
 
     def edge_stats(self, best_stats, stats, bad_counter):
         if stats['val_roc_auc'] > best_stats['val_roc_auc']:
+            best_stats.update(stats)
+            bad_counter = 0
+        else:
+            bad_counter += 1
+        return best_stats, bad_counter
+
+    def prompt_stats(self, best_stats, stats, bad_counter):
+        if stats['val@0.5'] > best_stats['val@0.5']:
             best_stats.update(stats)
             bad_counter = 0
         else:
@@ -316,6 +407,7 @@ class trainer(object):
             else:
                 raw_logits = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             logits = F.log_softmax(raw_logits[self.data.train_mask], 1)
+
             loss = self.loss_fn(logits, self.data.y[self.data.train_mask])
             # label smoothing loss
             if AcontainsB(self.type_trick, ['LabelSmoothing']):
@@ -335,7 +427,7 @@ class trainer(object):
         if self.dataset == 'ogbn-arxiv':
             embs = self.model(self.data.x, self.data.edge_index)
             if self.args.prompt_head == 'mlp':
-                out  = self.node_predictor(self.build_prompt(embs))
+                out = self.node_predictor(self.build_prompt(embs))
             else:
                 out = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             out = F.log_softmax(out, 1)
@@ -359,7 +451,7 @@ class trainer(object):
         else:
             embs = self.model(self.data.x, self.data.edge_index)
             if self.args.prompt_head == 'mlp':
-                logits  = self.node_predictor(self.build_prompt(embs))
+                logits = self.node_predictor(self.build_prompt(embs))
             else:
                 logits = self.node_predictor(self.build_prompt(embs), self.data.edge_index)
             logits = F.log_softmax(logits, 1)
@@ -371,11 +463,25 @@ class trainer(object):
                     'test_acc': acc_test, "val_los": val_loss.item()}
 
     def edge2node_prediction(self):
-        self.model.eval()
-        self.edge_predictor.eval()
+        stats = {}
+        test_correct, test_logits = self.edge2node_logits('test')
+        # val_correct, val_logits = self.edge2node_logits('valid')
+        train_correct, train_logits = self.edge2node_logits('train')
 
-        embs = self.model(self.data.x, self.data.edge_index)
+        for k in test_correct.keys():
+            stats[f'test@{k}'] = test_correct[k] / test_logits.size(0)
+            # stats[f'val@{k}'] = val_correct[k] / val_logits.size(0)
+            stats[f'train@{k}'] = train_correct[k] / train_logits.size(0)
+        return stats
 
+    def edge2node_logits(self, mode='test', prompt=None, embs=None):
+        # self.model.eval()
+        # self.edge_predictor.eval()
+        # import pdb; pdb.set_trace()
+        if embs is None:
+            embs = self.model(self.data.x, self.data.edge_index)
+        if prompt is not None:
+            embs = self.build_prompt(embs, prompt)
         train_embs = embs[self.data.train_mask]
         train_labels = self.data.y[self.data.train_mask]
         train_counter = collections.Counter(train_labels.cpu().tolist())
@@ -388,34 +494,33 @@ class trainer(object):
 
         # TODO : a bit hacky, need to figure out how to improve inference speed.
         def get_correction(test_embs, test_labels):
-            correct = {0.25: 0, 0.5:0, 0.75:0, 0.9:0}
-            for i in range(test_embs.size(0)):
-                tile_embs = test_embs[i].tile(train_embs.size(0)).reshape(train_embs.size(0), -1)
+            correct = {0.25: 0, 0.5: 0, 0.75: 0, 0.9: 0}
+            logits = []
+            for sample in range(test_embs.size(0)):
+                tile_embs = test_embs[sample].tile(train_embs.size(0)).reshape(train_embs.size(0), -1)
                 pred_edges = torch.sigmoid(self.edge_predictor(tile_embs, train_embs)).squeeze()
-                for k in correct.keys():
-                    pred_labels = train_labels[pred_edges.gt(k)]
+                #
+                pr_class = []
+                for i in range(max(train_counter.keys()) + 1):
+                    p = pred_edges[train_labels.eq(i)].mean().unsqueeze(0)
+                    pr_class.append(p)
+                logits.append(torch.cat(pr_class, dim=0).unsqueeze(0))
+                #
+                for threshold in correct.keys():
+                    pred_labels = train_labels[pred_edges.gt(threshold)]
                     class_counter = collections.Counter(pred_labels.cpu().tolist())
                     if len(class_counter):
-                        norm_class = {k: class_counter[k]/train_counter[k] for k in train_counter.keys()}
-                        max_label = max(norm_class, key=norm_class.get)
-                        if max_label == test_labels[i]:
-                            correct[k] += 1
-            return correct
-        test_correct = get_correction(test_embs, test_labels)
-        val_correct = get_correction(val_embs, val_labels)
-        stats = {}
-        for k in test_correct.keys():
-            stats[f'test@{k}'] = test_correct[k] / test_embs.size(0)
-            stats[f'val@{k}'] = val_correct[k] / val_embs.size(0)
-        return stats
+                        max_label = max(class_counter, key=class_counter.get)
+                        if max_label == test_labels[sample]:
+                            correct[threshold] += 1
+            return correct, torch.cat(logits, dim=0)
 
-
-
-
-
-
-
-
+        if mode == 'test':
+            return get_correction(test_embs, test_labels)
+        elif mode == 'valid':
+            return get_correction(val_embs, val_labels)
+        else:
+            return get_correction(train_embs, train_labels)
 
     @torch.no_grad()
     def run_testSet(self):
@@ -439,19 +544,26 @@ class trainer(object):
         node_idx = self.sampler.adj.random_walk(torch.tensor(i).flatten(), self.args.prompt_k)
         return node_idx
 
-    def build_prompt(self, embs):
+    def build_prompt(self, embs, prompt=None):
         # embs = embs.detach().clone()
         if self.args.task == 'dt':
             return embs
         elif self.args.task == 'dtr':
-            sub_graphs = torch.cat([self.node_sampling(i) for i in range(self.data.num_nodes)], dim=0)
-            embs = embs[sub_graphs]
-            if self.args.prompt_aggr == 'concat':
-                embs = embs.reshape(embs.size(0), -1)
-            elif self.args.prompt_aggr == 'sum':
-                embs = embs.sum(dim=1)
-            elif self.args.prompt_aggr == 'mean':
-                embs = embs.mean(dim=1)
-            else:
-                raise ValueError
-            return embs
+            prompt = torch.cat([self.node_sampling(i) for i in range(self.data.num_nodes)], dim=0)
+            embs = embs[prompt]
+        elif self.args.task == 'prompt':
+            assert prompt is not None
+            _prompt = torch.zeros(prompt.size(0), prompt.size(1)+1, dtype=torch.long)
+            _prompt[:, 0] = torch.arange(prompt.size(0))
+            _prompt[:, 1::] = prompt
+            prompt = _prompt
+            embs = embs[prompt]
+        if self.args.prompt_aggr == 'concat':
+            embs = embs.reshape(embs.size(0), -1)
+        elif self.args.prompt_aggr == 'sum':
+            embs = embs.sum(dim=1)
+        elif self.args.prompt_aggr == 'mean':
+            embs = embs.mean(dim=1)
+        else:
+            raise ValueError
+        return embs
