@@ -21,6 +21,9 @@ cur_dir = os.path.dirname(os.path.realpath(__file__))
 par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append('%s/software/' % par_dir)
 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 def print_args(args):
     _dict = vars(args)
     _key = sorted(_dict.items(), key=lambda x: x[0])
@@ -78,7 +81,7 @@ def overwrite_with_yaml(args, model, dataset):
 
 class TaskPredictor(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
-                 dropout, lr):
+                 dropout, lr, weight_decay):
         super(TaskPredictor, self).__init__()
 
         self.lins = torch.nn.ModuleList()
@@ -89,7 +92,7 @@ class TaskPredictor(torch.nn.Module):
         self.lins.append(torch.nn.Linear(hidden_channels, out_channels))
 
         self.dropout = dropout
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
 
     def reset_parameters(self):
         for lin in self.lins:
@@ -107,9 +110,17 @@ class TaskPredictor(torch.nn.Module):
         x = self.lins[-1](x)
         return x
 
+class CompoundOptimizers():
+    def __init__(self, optimizers):
+        self.optimizers = optimizers
 
+    def zero_grad(self):
+        for opt in self.optimizers:
+            opt.zero_grad()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    def step(self):
+        for opt in self.optimizers:
+            opt.step()
 
 
 def floor(x):
@@ -516,3 +527,8 @@ class StratifiedSampler():
 
     def __len__(self):
         return len(self.class_vector)
+
+def evaluate(output, labels, mask):
+    _, indices = torch.max(output, dim=1)
+    correct = torch.sum(indices[mask] == labels[mask])
+    return correct.item() * 1.0 / mask.sum().item()

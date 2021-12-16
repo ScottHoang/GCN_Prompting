@@ -83,6 +83,9 @@ class BaseOptions():
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
+        parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')
+        parser.add_argument('--prompt-lr', type=float, default=1e-3)
+        parser.add_argument('--prompt-w-org-features', action='store_true')
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,
@@ -121,8 +124,8 @@ class BaseOptions():
             args.lr = 0.005  # 0.005
             args.weight_decay = 5e-4
             # args.epochs = 1000
-            args.patience = 100
-            args.dim_hidden = 64
+            # args.patience = 100
+            # args.dim_hidden = 64
             args.activation = 'relu'
             # edge task specific
             args.use_splitted = False
@@ -139,8 +142,8 @@ class BaseOptions():
             args.lr = 0.01
             args.weight_decay = 5e-4
             # args.epochs = 1000
-            args.patience = 100
-            args.dim_hidden = 256
+            # args.patience = 100
+            # args.dim_hidden = 256
             args.activation = 'relu'
             # edge task specific
             args.use_splitted = False
@@ -157,8 +160,8 @@ class BaseOptions():
             args.lamda = 0.6
             args.weight_decay = 5e-4
             # args.epochs = 1000
-            args.patience = 100
-            args.dim_hidden = 256
+            # args.patience = 100
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.res_alpha = 0.2
@@ -175,8 +178,8 @@ class BaseOptions():
             args.lr = 0.005
             args.weight_decay = 0.
             # args.epochs = 1000
-            args.patience = 200
-            args.dim_hidden = 256
+            # args.patience = 200
+            # args.dim_hidden = 256
 
 
         # ==============================================
@@ -184,7 +187,7 @@ class BaseOptions():
 
         elif args.dataset == 'CoauthorPhysics':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -199,7 +202,7 @@ class BaseOptions():
 
         elif args.dataset == 'CoauthorCS':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -215,7 +218,7 @@ class BaseOptions():
 
         elif args.dataset == 'TEXAS':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -233,7 +236,7 @@ class BaseOptions():
 
         elif args.dataset == 'WISCONSIN':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -249,7 +252,7 @@ class BaseOptions():
 
         elif args.dataset == 'CORNELL':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -265,7 +268,7 @@ class BaseOptions():
 
         elif args.dataset == 'ACTOR':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -280,7 +283,7 @@ class BaseOptions():
 
         elif args.dataset == 'AmazonComputers':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
@@ -293,7 +296,7 @@ class BaseOptions():
 
         elif args.dataset == 'AmazonPhoto':
             # args.epochs = 1000
-            args.patience = 100
+            # args.patience = 100
             args.dim_hidden = 256
             args.activation = 'relu'
 
