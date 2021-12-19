@@ -85,8 +85,9 @@ class TaskPredictor(torch.nn.Module):
         super(TaskPredictor, self).__init__()
 
         self.lins = torch.nn.ModuleList()
-        self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
-        for _ in range(num_layers - 2):
+        # self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
+        hidden_channels = in_channels
+        for _ in range(num_layers):
             self.lins.append(torch.nn.Linear(hidden_channels, hidden_channels//2))
             hidden_channels = hidden_channels // 2
         self.lins.append(torch.nn.Linear(hidden_channels, out_channels))

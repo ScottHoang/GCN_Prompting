@@ -3,6 +3,7 @@ import os
 import networkx as nx
 import numpy as np
 import torch
+import torch_geometric
 import torch_geometric.transforms as T
 from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.datasets import Planetoid, Coauthor, WebKB, Actor, Amazon
@@ -128,9 +129,23 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
     return data
 
 def prepare_edge_data(args, which_run):
-    data = load_data(args.dataset, which_run, norm=None)
+    data = load_data(args.dataset, which_run)
     data = split_edges(data, args)
+    print_data_stats(data)
     print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos.size(1) + data.train_neg.size(1)}, "
           f"ValEdges: {data.val_pos.size(1) + data.val_neg.size(1)}, "
           f"TestEdges: {data.test_pos.size(1) + data.test_neg.size(1)}")
     return data
+
+
+
+def print_data_stats(data):
+    num_nodes = data.x.size(0)
+    num_train = data.train_mask.sum(0)
+    num_val = data.val_mask.sum(0)
+    num_test = data.test_mask.sum(0)
+
+    homophily = torch_geometric.utils.homophily(data.edge_index , data.y)
+
+    msg = f"nodes: {num_nodes}, trainNode: {num_train}, valNode: {num_val}, testNode: {num_test}, homophily: {homophily}"
+    print(msg)
