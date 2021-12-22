@@ -1,24 +1,34 @@
-from typing import Dict
-
-from .base_regimen import Regimen
-from utils import AcontainsB, evaluate
 import torch
-import torch.nn as nn
+import torch.nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from sklearn.metrics import roc_auc_score, average_precision_score
+from .generic_task import Learner
+from utils import AcontainsB
 
+from ogb.nodeproppred import Evaluator
 
-class NodeClassification(Regimen):
-    def __init__(self, args, model, predictor, data, loss_fn, optimizer):
-        super().__init__()
-        self.init(args)
-        self.model = model
-        self.predictor = predictor
-        self.data = data
-        self.optimizer = optimizer
-        self.loss_fn = loss_fn
+def evaluate(output, labels, mask):
+    _, indices = torch.max(output, dim=1)
+    correct = torch.sum(indices[mask] == labels[mask])
+    return correct.item() * 1.0 / mask.sum().item()
 
-    def train(self) -> Dict:
+class NodeLearner(Learner):
+    def __init__(self, model, batch_size: int, data, dataset, type_trick, split_idx=None):
+        super().__init__(model, batch_size, data)
+        self.loss_fn = F.nll_loss
+        self.split_idx = split_idx
+        self.dataset = dataset
+        self.type_trick = type_trick
+        if dataset =='ogbn':
+            self.evaluator = Evaluator(name='ogbn-arxiv')
+            self.train_idx = self.split_idx['train'].to(self.data.x.device)
+        else:
+            self.evaluator = None
+
+    def task_train(self):
         self.model.train()
+        loss = 0.
         if self.dataset == 'ogbn-arxiv':
             pred = self.model(self.data.x, self.data.edge_index)
             pred = F.log_softmax(pred[self.train_idx], 1)
@@ -32,13 +42,13 @@ class NodeClassification(Regimen):
                 smooth_loss = -raw_logits[self.data.train_mask].mean(dim=-1).mean()
                 loss = 0.97 * loss + 0.03 * smooth_loss
 
-        self.optimizer.zero_grad()
+        self.model.optimizer.zero_grad()
         loss.backward()
-        self.optimizer.step()
+        self.model.optimizer.step()
 
-        return {'loss': loss.item()}
+        return {'train_loss': loss.item()}
 
-    def test(self) -> Dict:
+    def task_test(self):
         self.model.eval()
         # torch.cuda.empty_cache()
         if self.dataset == 'ogbn-arxiv':
@@ -60,6 +70,7 @@ class NodeClassification(Regimen):
             })['acc']
 
             return {'train_acc': train_acc, 'valid_acc': valid_acc, 'test_acc': test_acc, "val_los": 0}
+
         else:
             logits = self.model(self.data.x, self.data.edge_index)
             logits = F.log_softmax(logits, 1)
@@ -69,3 +80,22 @@ class NodeClassification(Regimen):
             val_loss = self.loss_fn(logits[self.data.val_mask], self.data.y[self.data.val_mask])
             return {'train_acc': acc_train, 'valid_acc': acc_val,
                     'test_acc': acc_test, "val_los": val_loss.item()}
+
+    def stats(self, best_stats, stats, bad_counter):
+        if self.dataset != 'ogbn-arxiv':
+            if best_stats is None or stats['val_los'] < best_stats['val_los']:
+                best_stats.update(stats)
+                bad_counter = 0
+            else:
+                bad_counter += 1
+        else:
+            if stats['valid_acc'] > best_stats['valid_acc']:
+                best_stats.update(stats)
+                bad_counter = 0
+            else:
+                bad_counter += 1
+        return best_stats, bad_counter
+
+
+def create_node_task(model, batch_size, data, dataset, type_trick, split_idx=None):
+    return NodeLearner(model, batch_size, data, dataset, type_trick, split_idx)

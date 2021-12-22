@@ -129,7 +129,7 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
     return data
 
 def prepare_edge_data(args, which_run):
-    data = load_data(args.dataset, which_run)
+    data = load_data(args.dataset, which_run, norm=None)
     data = split_edges(data, args)
     print_data_stats(data)
     print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos.size(1) + data.train_neg.size(1)}, "
