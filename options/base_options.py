@@ -86,6 +86,7 @@ class BaseOptions():
         parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')
         parser.add_argument('--prompt-lr', type=float, default=1e-3)
         parser.add_argument('--prompt-w-org-features', action='store_true')
+        parser.add_argument('--prompt-save-embs', action='store_true')
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,

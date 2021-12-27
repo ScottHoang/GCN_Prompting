@@ -71,7 +71,7 @@ class EdgeLearner(Learner):
                 self.model(data.x, data.edge_index, data.val_pos[0, perm], data.val_pos[1, perm])))
             val_pred_neg.append(torch.sigmoid(
                 self.model(data.x, data.edge_index, data.val_neg[0, perm], data.val_neg[1, perm])))
-            val_pred_pos = torch.cat(val_pred_pos, dim=0)
+        val_pred_pos = torch.cat(val_pred_pos, dim=0)
         val_pred_neg = torch.cat(val_pred_neg, dim=0)
         val_pred = torch.cat([val_pred_pos, val_pred_neg], dim=0).squeeze(-1).cpu()
         val_labels = torch.cat([torch.ones(val_pred_pos.shape), torch.zeros(val_pred_neg.shape)]).squeeze(-1).cpu()

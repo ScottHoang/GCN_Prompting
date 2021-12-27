@@ -25,21 +25,23 @@ class GCN(nn.Module):
         self.layers_GCN = nn.ModuleList([])
         self.layers_bn = nn.ModuleList([])
 
-        self.layers_GCN.append(GCNConv(self.num_feats, self.dim_hidden, cached=self.cached))
+        # self.layers_GCN.append(GCNConv(self.num_feats, self.dim_hidden, cached=self.cached))
         if self.type_norm == 'batch':
             self.layers_bn.append(torch.nn.BatchNorm1d(self.dim_hidden))
         elif self.type_norm == 'pair':
             self.layers_bn.append(pair_norm())
 
-        for _ in range(self.num_layers - 2):
+        cur_dim = self.num_feats
+        for _ in range(self.num_layers - 1):
             self.layers_GCN.append(
-                GCNConv(self.dim_hidden, self.dim_hidden, cached=self.cached))
+                GCNConv(cur_dim, self.dim_hidden, cached=self.cached))
+            cur_dim = self.dim_hidden
 
             if self.type_norm == 'batch':
                 self.layers_bn.append(torch.nn.BatchNorm1d(self.dim_hidden))
             elif self.type_norm == 'pair':
                 self.layers_bn.append(pair_norm())
-        self.layers_GCN.append(GCNConv(self.dim_hidden, self.num_classes, cached=self.cached))
+        self.layers_GCN.append(GCNConv(cur_dim, self.num_classes, cached=self.cached))
 
         if self.type_norm == 'batch':
             self.layers_bn.append(torch.nn.BatchNorm1d(self.dim_hidden))

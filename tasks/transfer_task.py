@@ -14,6 +14,9 @@ class TransNodeWrapper:
         self.embeddings = embeddings
         self.prompts = prompts
         self.is_mlp = isinstance(self.predictor, TaskPredictor)
+        self.init_optimizer()
+
+    def init_optimizer(self):
         self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer])
 
     def __call__(self, x, edge_index=None):
@@ -27,14 +30,6 @@ class TransNodeWrapper:
             return self.predictor(embs)
         else:
             return self.predictor(embs, edge_index)
-
-    def optimizers_zero_grad(self):
-        self.predictor.optimizer.zero_grad()
-        self.embeddings.optimizer.zero_grad()
-
-    def optimizers_step(self):
-        self.predictor.optimizer.step()
-        self.embeddings.optimizer.step()
 
     def train(self):
         self._cache = True
