@@ -8,6 +8,7 @@ from torch.utils.data.dataloader import DataLoader
 import torch.nn.functional as F
 from ogb.nodeproppred import Evaluator
 
+import utils
 from Dataloader import load_data, load_ogbn, prepare_edge_data
 from tricks import TricksComb  # TricksCombSGC
 from utils import AcontainsB
@@ -22,6 +23,12 @@ from tasks.edge_task import create_edge_task
 from tasks.node_task import create_node_task
 from tasks.transfer_task import create_domain_transfer_task
 from tasks.baseline_node_task import create_node_task as create_nodeBaseLine_task
+from tasks.vgae_task import create_vgae_task, create_vge_node_transfer_task
+from models import VGAE
+
+BASIC = ['node', 'edge']
+DOMAIN = ['dt']
+VGAE = ['vgae']
 
 
 def evaluate(output, labels, mask):
@@ -38,12 +45,12 @@ class trainer(object):
         self.device = torch.device(f'cuda:{args.cuda_num}' if args.cuda else 'cpu')
         self.which_run = which_run
         # set dataloader
-        self.set_dataloader()
+        # self.set_dataloader()
         #
         if args.task != 'node':
             self.num_classes = args.num_classes
             args.num_classes = args.dim_hidden
-            self.edge_predictor = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, args.prompt_layer,
+            self.edge_predictor = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 2,
                                                 args.dropout, lr=0.0005, weight_decay=self.weight_decay).to(self.device)
             self.optimizer_edge = self.edge_predictor.optimizer
             # self.node_predictor, self.optimizer_node = self.init_node_predictor()
@@ -59,25 +66,26 @@ class trainer(object):
 
     def get_channel_by_task(self, task):
         args = self.args
-        if task != 'dt':
-            in_c = args.dim_hidden
+        dim_hidden = args.dim_hidden
+        if self.type_model == 'VGAE':
+            dim_hidden = dim_hidden // 2
+        in_c = dim_hidden
+        if self.args.prompt_k:
             if args.prompt_aggr == 'concat':
-                in_c *= (args.prompt_k + 1)
-            if args.prompt_w_org_features:
-                in_c += self.data.x.size(-1)
-            if task == 'dtbfs':
-                in_c += args.dim_hidden
-        else:
-            in_c = args.dim_hidden
+                in_c *= args.prompt_k
+            in_c += dim_hidden
+        if args.prompt_w_org_features:
+            in_c += self.data.x.size(-1)
         return in_c
+        # return self.data.x.size(-1)
 
     def init_predictor_by_type(self, type, in_c, args=None):
         if type == 'mlp':
             node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr, weight_decay=self.weight_decay).to(self.device)
             optimizer_node = node_predictor.optimizer
-        elif type == 'gnn':
-            Model = getattr(importlib.import_module("models"), self.type_model)
+        else:
+            Model = getattr(importlib.import_module("models"), self.prompt_head)
             #
             args.num_feats = in_c
             args.num_layers = self.args.prompt_layer
@@ -85,8 +93,6 @@ class trainer(object):
             #
             node_predictor = Model(args).to(self.device)
             optimizer_node = node_predictor.optimizer
-        else:
-            raise NotImplementedError
         return node_predictor, optimizer_node
 
     def init_predictor_by_tasks(self, task):
@@ -106,27 +112,21 @@ class trainer(object):
         # grad = embedding_grad.get()
 
     def set_dataloader(self):
-        if self.args.task in ['node', 'dt', 'dtbfs', 'dtzero', 'prompt', 'nodebs']:
-            if self.dataset == 'ogbn-arxiv':
-                self.data, self.split_idx = load_ogbn(self.dataset)
-                self.train_idx = self.split_idx['train'].to(self.device)
-                self.evaluator = Evaluator(name='ogbn-arxiv')
-                self.loss_fn = torch.nn.functional.nll_loss
-            else:
-                self.data = load_data(self.dataset, self.which_run)
-                self.split_idx=None
-                # self.data = prepare_edge_data(self.args, self.which_run).to(self.device)
-                self.loss_fn = torch.nn.functional.nll_loss
+        self.split_idx = None
+        if self.dataset == 'ogbn-arxiv':
+            self.data, self.split_idx = load_ogbn(self.dataset)
+            self.train_idx = self.split_idx['train']
+            self.evaluator = Evaluator(name='ogbn-arxiv')
+        else:
+            self.data = load_data(self.dataset, self.which_run, norm=None)
+            # self.data = prepare_edge_data(self.args, self.which_run).to(self.device)
 
             if self.args.task in ['dtbfs']:
                 self.sampler = GraphSAINTRandomWalkSampler(self.data, batch_size=1, num_steps=self.data.x.size(0),
                                                            walk_length=self.args.prompt_k)
-            self.data.to(self.device)
-        elif self.args.task == 'edge':
-            self.data = prepare_edge_data(self.args, self.which_run).to(self.device)
-            self.loss_fn = torch.nn.BCEWithLogitsLoss()
-        else:
-            pass
+
+        # elif self.args.task in ['edge', 'vgae', 'dt', 'dtbfs', 'dtzero', 'prompt', 'nodebs', 'dtvgae']:
+        self.data = prepare_edge_data(self.data, self.args, self.which_run).to(self.device)
 
     def train_and_test(self):
         if self.args.task in ['node', 'edge']:
@@ -140,41 +140,65 @@ class trainer(object):
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
 
             return stats
-        elif self.args.task in ['dt', 'dtbfs','dtzero']:
+        elif self.args.task in ['dt', 'dtbfs', 'dtvgae']:
             task = self.args.task
             ########################### pretrain
             self.args.task = 'edge'
             self.set_dataloader()
-            edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)
+            if self.type_model == 'VGAE':
+                edge_learner = create_vgae_task(self.model, self.args.batch_size, self.data)
+            else:
+                edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)
             train_fn = lambda: self.sequential_run(edge_learner.task_train, edge_learner.task_test)
             pretrain_stats = self.train_test_frame(train_fn, edge_learner.stats)
             ########################### predictor training
             # init predictor
             self.args.task = task
-            self.node_predictor, optimizer_node = self.init_predictor_by_tasks(task)
             #
-            if task in ['dt', 'dtbfs']:
-                self.prompt_embs = Embeddings(self.model(self.data.x, self.data.edge_index).detach().clone(),
-                                              lr=self.prompt_lr, weight_decay=self.weight_decay)
-            elif task == 'dtzero':
-                self.prompt_embs = Embeddings(self.model(self.data.x, self.data.edge_index).detach().clone(), init_as_zero=True,
-                                              prompt_size=self.args.prompt_k, lr=self.prompt_lr, weight_decay=self.weight_decay)
+            if task in ['dt', 'dtbfs', 'dtvgae']:
+                if self.type_model == 'VGAE':
+                    self.model.eval()
+                    _, mu, logvar = self.model(self.data.x, self.data.edge_index)
+                    self.prompt_embs = Embeddings(mu.detach().clone(),
+                                                  lr=self.prompt_lr, weight_decay=self.weight_decay)
+                    self.prompt_embs.mu = mu
+                    self.prompt_embs.logvar = logvar
+                else:
+                    embs = self.model(self.data.x, self.data.edge_index)
+                    self.prompt_embs = Embeddings(embs.detach().clone(),
+                                                  lr=self.prompt_lr, weight_decay=self.weight_decay)
+                self.node_predictor, optimizer_node = self.init_predictor_by_tasks(task)
+            else:
+                raise ValueError
 
             self.prompt_embs.to(self.device)
             #
-            if task in 'dtbfs':
-                self.bfs_prompts = self.get_bfs_prompts()
-            else:
-                self.bfs_prompts = None
+            # if task in ['dtbfs', 'dtvgae']:
+            #     self.bfs_prompts = self.get_bfs_prompts()
+            # else:
+            #     self.bfs_prompts = None
             #
-            learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
-                                                  self.args.prompt_w_org_features, self.bfs_prompts, self.data, self.dataset,
-                                                  self.args.batch_size, self.type_trick, self.split_idx)
+            if task == 'dtvgae':
+                learner = create_vge_node_transfer_task(self.model, self.node_predictor, self.prompt_embs, task,
+                                                      self.args.prompt_aggr,
+                                                      self.args.prompt_w_org_features, self.prompt_k, self.data,
+                                                      self.dataset,
+                                                      self.args.batch_size, self.type_trick, self.split_idx)
+            else:
+                learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
+                                                      self.args.prompt_w_org_features, self.prompt_k, self.data, self.dataset,
+                                                      self.args.batch_size, self.type_trick, self.split_idx)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
             stats.update(pretrain_stats)
+
+            if self.prompt_get_mad:
+                stats['embs_mad'] = self.get_mad(self.prompt_embs.static_embs)
+                stats['prompt_mad'] = self.get_mad(self.prompt_embs.embs)
+
             return stats
+
         elif self.args.task == 'nodebs':
             task = self.args.task
             self.args.task = 'edge'
@@ -188,6 +212,12 @@ class trainer(object):
             learner = create_nodeBaseLine_task(self.model, self.node_predictor, self.args.batch_size, self.data, self.dataset,
                                                self.type_trick, self.split_idx)
             # train /test fn init
+            train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
+            stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
+            return stats
+        elif self.args.task == 'vgae':
+            assert isinstance(self.model, VGAE)
+            learner = create_vgae_task(self.model, self.args.batch_size, self.data)
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
             return stats
@@ -273,3 +303,8 @@ class trainer(object):
         if len(prompt) > target:
             prompt = random.sample(prompt, target)
         return list(prompt)
+
+    def get_mad(self, embs):
+        n = self.data.x.size(0)
+        tgt = torch.ones(n, n).to(embs.device)
+        return utils.MAD(embs, tgt)

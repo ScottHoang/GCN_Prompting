@@ -45,10 +45,21 @@ class EdgeLearner(Learner):
         loss_epoch = []
         data = self.data
         device = self.data.x.device
-        for perm in DataLoader(range(data.train_pos.size(1)), self.batch_size, shuffle=True):
+        if self.batch_size > 0:
+            for perm in DataLoader(range(data.train_pos.size(1)), self.batch_size, shuffle=True):
 
-            pos_prediction = self.model(data.x, data.edge_index, data.train_pos[0, perm], data.train_pos[1, perm])
-            neg_prediction = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
+                pos_prediction = self.model(data.x, data.edge_index, data.train_pos[0, perm], data.train_pos[1, perm])
+                neg_prediction = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
+
+                loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
+                       self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
+                self.model.optimizers_zero_grad()
+                loss.backward()
+                self.model.optimizers_step()
+                loss_epoch.append(loss.item())
+        else:
+            pos_prediction = self.model(data.x, data.edge_index, data.train_pos[0], data.train_pos[1])
+            neg_prediction = self.model(data.x, data.edge_index, data.train_neg[0], data.train_neg[1])
 
             loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
                    self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
@@ -56,6 +67,7 @@ class EdgeLearner(Learner):
             loss.backward()
             self.model.optimizers_step()
             loss_epoch.append(loss.item())
+
         mean_loss = sum(loss_epoch) / len(loss_epoch)
         return {'loss_train': mean_loss}
 
@@ -65,12 +77,31 @@ class EdgeLearner(Learner):
         data = self.data
         val_pred_pos = []
         val_pred_neg = []
-        for perm in DataLoader(range(data.val_pos.size(1)), self.batch_size, shuffle=True):
-            #  val
+        test_pred_pos = []
+        test_pred_neg = []
+        if self.batch_size > 0:
+            for perm in DataLoader(range(data.val_pos.size(1)), self.batch_size, shuffle=True):
+                #  val
+                val_pred_pos.append(torch.sigmoid(
+                    self.model(data.x, data.edge_index, data.val_pos[0, perm], data.val_pos[1, perm])))
+                val_pred_neg.append(torch.sigmoid(
+                    self.model(data.x, data.edge_index, data.val_neg[0, perm], data.val_neg[1, perm])))
+
+            for perm in DataLoader(range(data.test_pos.size(1)), self.batch_size, shuffle=False):
+                test_pred_pos.append(torch.sigmoid(
+                    self.model(data.x, data.edge_index, data.test_pos[0, perm], data.test_pos[1, perm])))
+                test_pred_neg.append(torch.sigmoid(
+                    self.model(data.x, data.edge_index, data.test_neg[0, perm], data.test_neg[1, perm])))
+        else:
             val_pred_pos.append(torch.sigmoid(
-                self.model(data.x, data.edge_index, data.val_pos[0, perm], data.val_pos[1, perm])))
+                self.model(data.x, data.edge_index, data.val_pos[0], data.val_pos[1])))
             val_pred_neg.append(torch.sigmoid(
-                self.model(data.x, data.edge_index, data.val_neg[0, perm], data.val_neg[1, perm])))
+                self.model(data.x, data.edge_index, data.val_neg[0], data.val_neg[1])))
+            test_pred_pos.append(torch.sigmoid(
+                self.model(data.x, data.edge_index, data.test_pos[0], data.test_pos[1])))
+            test_pred_neg.append(torch.sigmoid(
+                self.model(data.x, data.edge_index, data.test_neg[0], data.test_neg[1])))
+
         val_pred_pos = torch.cat(val_pred_pos, dim=0)
         val_pred_neg = torch.cat(val_pred_neg, dim=0)
         val_pred = torch.cat([val_pred_pos, val_pred_neg], dim=0).squeeze(-1).cpu()
@@ -78,13 +109,6 @@ class EdgeLearner(Learner):
         val_roc_auc = roc_auc_score(val_labels, val_pred)
         val_ap = average_precision_score(val_labels, val_pred)
         #  test
-        test_pred_pos = []
-        test_pred_neg = []
-        for perm in DataLoader(range(data.test_pos.size(1)), self.batch_size, shuffle=False):
-            test_pred_pos.append(torch.sigmoid(
-                self.model(data.x, data.edge_index, data.test_pos[0, perm], data.test_pos[1, perm])))
-            test_pred_neg.append(torch.sigmoid(
-                self.model(data.x, data.edge_index, data.test_neg[0, perm], data.test_neg[1, perm])))
 
         test_pred_pos = torch.cat(test_pred_pos, dim=0)
         test_pred_neg = torch.cat(test_pred_neg, dim=0)

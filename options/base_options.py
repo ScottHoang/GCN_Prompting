@@ -27,7 +27,7 @@ class BaseOptions():
                             help="0: test tricks, 1: test models")
 
         parser.add_argument('--type_model', type=str, default="GCN",
-                            choices=['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN'])
+                            choices=['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN', 'VGAE'])
         parser.add_argument('--type_trick', type=str, default="None")
         parser.add_argument('--layer_agg', type=str, default='concat',
                             choices=['concat', 'maxpool', 'attention', 'mean'],
@@ -77,7 +77,7 @@ class BaseOptions():
                             help='initial attribute for graphs without node attributes\
                             , options: n2v, one_hot, spc, ones, zeros, None')
         # batch size for edge
-        parser.add_argument('--batch-size', type=int, default=32)
+        parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
@@ -87,6 +87,7 @@ class BaseOptions():
         parser.add_argument('--prompt-lr', type=float, default=1e-3)
         parser.add_argument('--prompt-w-org-features', action='store_true')
         parser.add_argument('--prompt-save-embs', action='store_true')
+        parser.add_argument('--prompt-get-mad', action='store_true')
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,

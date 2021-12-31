@@ -1,19 +1,28 @@
+import random
+
 from .edge_task import EdgeLearner
 from .node_task import NodeLearner
 from utils import TaskPredictor
 import torch
 from utils import CompoundOptimizers
+import torch_geometric.transforms as T
+
 class TransNodeWrapper:
-    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data_features, prompts):
+    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data_features, k_prompt):
         self.model = model
         self.predictor = predictor
         self.prompt_mode = prompt_mode
         self.concat_mode = concat_mode
         self.data_features = data_features
         self.task = task
+        self.k_prompt = k_prompt
         self.embeddings = embeddings
-        self.prompts = prompts
+        self.prompt = None
+        # self.prompts = prompts
         self.is_mlp = isinstance(self.predictor, TaskPredictor)
+        if not self.is_mlp:
+            self.norm = lambda x: x.div_(x.sum(dim=-1, keepdims=True).clamp(min=1.))
+
         self.init_optimizer()
 
     def init_optimizer(self):
@@ -22,13 +31,20 @@ class TransNodeWrapper:
     def __call__(self, x, edge_index=None):
         embs = self.embeddings.static_embs
         learnable_embs = self.embeddings.embs
-        if self.prompts is not None:
-            prompt_embs = self.build_prompt(learnable_embs,  self.prompts, self.task)
-            embs = self.combine_prompt(prompt_embs, embs)
+        if self.k_prompt:
+            if self.prompt is None:
+                self.prompt = prompt = self.get_bfs_prompts(x.size(0), edge_index)
+            else:
+                prompt = self.prompt
+            prompt_embs = self.build_prompt(learnable_embs,  prompt)
+        else:
+            prompt_embs = None
+        embs = self.concat_features(embs, x, prompt_embs)
 
         if self.is_mlp:
             return self.predictor(embs)
         else:
+            embs = self.norm(embs)
             return self.predictor(embs, edge_index)
 
     def train(self):
@@ -42,30 +58,9 @@ class TransNodeWrapper:
         self.model.eval()
         self.predictor.eval()
 
-    @staticmethod
-    def build_prompt(embs, prompt=None, task='dt'):
-        # embs = embs / embs.sum(1, keepdims=True).clamp(min=1)
-        # embs = embs.detach().clone()
-        if task in ['dt']:
-            return embs
-        elif task == 'dtbfs':
-            # prompt = self.bfs()
-            assert prompt is not None
-            return embs[prompt]
-        elif task == 'prompt':
-            assert prompt is not None
-            _prompt = torch.zeros(prompt.size(0), prompt.size(1)+1, dtype=torch.long)
-            _prompt[:, 0] = torch.arange(prompt.size(0))
-            _prompt[:, 1::] = prompt
-            prompt = _prompt
-            return embs[prompt]
-        else:
-            assert NotImplementedError
-
-    def combine_prompt(self, prompts, embs):
+    def build_prompt(self, embs, prompts_idx=None):
+        prompts = embs[prompts_idx]
         pmode = self.prompt_mode
-        cmode = self.concat_mode
-        
         if pmode == 'concat':
             prompts = prompts.reshape(prompts.size(0), -1)
         elif pmode == 'sum':
@@ -74,16 +69,60 @@ class TransNodeWrapper:
             prompts = prompts.mean(dim=1)
         else:
             raise ValueError
+        return prompts
 
+    def concat_features(self, embs, data_features, prompts=None):
+        cmode = self.concat_mode
         if cmode:
-            embs = torch.cat([embs, prompts, self.data_features], dim=-1)
+            if prompts is not None:
+                embs = torch.cat([embs, prompts, data_features], dim=-1)
+            else:
+                embs = torch.cat([embs, data_features], dim=-1)
         else:
-            embs = torch.cat([embs, prompts], dim=-1)
+            if prompts is not None:
+                embs = torch.cat([embs, prompts], dim=-1)
+            else:
+                pass
         return embs
 
-def create_domain_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, prompts, data, dataset,
+    def get_bfs_prompts(self, num_nodes, edge_index):
+        assert self.k_prompt > 0
+        target_k = self.k_prompt
+        all_prompts = []
+        for i in range(num_nodes):
+            prompt = self.bfs(i, target_k, edge_index)
+            prompt.sort()
+            # prompts.append(i)
+            prompt = torch.tensor(prompt)
+            if prompt.size(0) < target_k:
+                prompt = prompt.tile(target_k // prompt.size(0) + 2)[:target_k]
+            all_prompts.append(prompt.unsqueeze(0))
+        all_prompts = torch.cat(all_prompts, dim=0)
+        return all_prompts
+
+    def bfs(self, node, target, edge_index):
+        prompt=set([])
+        queue=[node]
+        seen = set()
+
+        while queue:
+            s = queue.pop(0)
+            if s not in seen:
+                neighbors = edge_index[1, edge_index[0, :].eq(s)].tolist()
+                random.shuffle(neighbors)
+                for n in neighbors:
+                    prompt.add(n)
+                    queue.append(n)
+                    if len(prompt) == target*3:
+                        break
+            if len(prompt) == target*3:
+                break
+            seen.add(s)
+        if len(prompt) > target:
+            prompt = random.sample(prompt, target)
+        return list(prompt)
+
+def create_domain_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
                                 batch_size, type_trick, split_idx):
-    if task == 'dt':
-        prompts = None
-    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, prompts)
+    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)

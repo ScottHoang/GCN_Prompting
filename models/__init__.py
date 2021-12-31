@@ -7,5 +7,6 @@ from models.GCNII import GCNII
 from models.GPRGNN import GPRGNN
 from models.JKNet import JKNet
 from models.SGC import SGC
+from models.VGAE import VGAE
 
-__all__ = ['APPNP', 'DAGNN', 'EdgeDrop', 'GCN', 'GAT', 'GCNII', 'GPRGNN', 'JKNet', 'SGC']
+__all__ = ['APPNP', 'DAGNN', 'EdgeDrop', 'GCN', 'GAT', 'GCNII', 'GPRGNN', 'JKNet', 'SGC', 'VGAE']

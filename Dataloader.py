@@ -128,16 +128,14 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
         data.edge_index = edge_index
     return data
 
-def prepare_edge_data(args, which_run):
-    data = load_data(args.dataset, which_run, norm=None)
+def prepare_edge_data(data, args, which_run):
+    # data = load_data(args.dataset, which_run, norm=None)
     data = split_edges(data, args)
     print_data_stats(data)
     print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos.size(1) + data.train_neg.size(1)}, "
           f"ValEdges: {data.val_pos.size(1) + data.val_neg.size(1)}, "
           f"TestEdges: {data.test_pos.size(1) + data.test_neg.size(1)}")
     return data
-
-
 
 def print_data_stats(data):
     num_nodes = data.x.size(0)

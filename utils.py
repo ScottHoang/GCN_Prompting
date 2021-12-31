@@ -609,3 +609,33 @@ def corrcoef(x):
     c = torch.clamp(c, -1.0, 1.0)
 
     return c
+
+@torch.no_grad()
+def MAD(embeddings, targets=None):
+    n = embeddings.size(0)#
+    dij = []
+    for i in range(n):
+        dij.append(1 - torch.cosine_similarity(embeddings[i].unsqueeze(0), embeddings, dim=-1).unsqueeze(0))
+    dij = torch.cat(dij, dim=0)
+    dtgt = torch.mul(dij, targets)
+    dtgt = dtgt.sum(dim=-1) / targets.sum(dim=-1)
+    return dtgt.mean().item()
+
+@torch.no_grad()
+def I2NR(edges, labels, hops=2):
+    edges = to_undirected(edges)
+    i2nr = []
+    nodes = set(edges.reshape(-1).cpu().tolist())
+    for node in nodes:
+        node_label = labels[node]
+        subset, k_edges, _, _, = k_hop_subgraph(node, hops, edges)
+        source_labels = labels[k_edges[0, :]]
+        target_labels = labels[k_edges[1, :]]
+        like_edges = source_labels.eq(target_labels)
+        tgt = source_labels.eq(node_label)
+        information = torch.mul(like_edges, tgt).sum()
+        i2nr.append(information.div(k_edges.size(1)).item())
+    mean_i2nr = sum(i2nr)/len(i2nr)
+    missing_node_ratio = len(nodes) / labels.size(0)
+    weighted_mean = mean_i2nr * missing_node_ratio
+    return mean_i2nr, weighted_mean
