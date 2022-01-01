@@ -611,7 +611,7 @@ def corrcoef(x):
     return c
 
 @torch.no_grad()
-def MAD(embeddings, targets=None):
+def MAD(embeddings, targets=None, mean=True):
     n = embeddings.size(0)#
     dij = []
     for i in range(n):
@@ -619,7 +619,10 @@ def MAD(embeddings, targets=None):
     dij = torch.cat(dij, dim=0)
     dtgt = torch.mul(dij, targets)
     dtgt = dtgt.sum(dim=-1) / targets.sum(dim=-1)
-    return dtgt.mean().item()
+    if mean:
+        return dtgt.mean().item()
+    else:
+        return dtgt
 
 @torch.no_grad()
 def I2NR(edges, labels, hops=2):

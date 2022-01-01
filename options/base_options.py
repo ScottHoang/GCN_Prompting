@@ -84,6 +84,7 @@ class BaseOptions():
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
         parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')
+        parser.add_argument('--prompt-type', type=str, default='bfr', help='bfs|mad')
         parser.add_argument('--prompt-lr', type=float, default=1e-3)
         parser.add_argument('--prompt-w-org-features', action='store_true')
         parser.add_argument('--prompt-save-embs', action='store_true')

@@ -70,8 +70,8 @@ class VGAENodeWrapper(TransNodeWrapper):
         self.new_index = None
 
     def __call__(self, x, edge_index):
-        new_index = self.permute_index(edge_index)
-        return super(VGAENodeWrapper, self).__call__(x, new_index)
+        # new_index = self.permute_index(edge_index)
+        return super(VGAENodeWrapper, self).__call__(x, edge_index)
 
     @torch.no_grad()
     def permute_index(self, previous_index):
@@ -109,6 +109,6 @@ def create_vgae_task(model, batch_size, data):
     return VGAELearner(model, batch_size, data)
 
 def create_vge_node_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
-                                  batch_size, type_trick, split_idx):
-    wrap = VGAENodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts)
+                                  batch_size, type_trick, split_idx, prompt_type):
+    wrap = VGAENodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts, prompt_type)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)

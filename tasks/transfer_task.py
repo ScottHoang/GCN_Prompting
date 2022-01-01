@@ -6,10 +6,12 @@ from utils import TaskPredictor
 import torch
 from utils import CompoundOptimizers
 import torch_geometric.transforms as T
+from utils import MAD
 
 class TransNodeWrapper:
-    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data_features, k_prompt):
+    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data_features, k_prompt, prompt_type):
         self.model = model
+        self.prompt_type = prompt_type
         self.predictor = predictor
         self.prompt_mode = prompt_mode
         self.concat_mode = concat_mode
@@ -33,7 +35,7 @@ class TransNodeWrapper:
         learnable_embs = self.embeddings.embs
         if self.k_prompt:
             if self.prompt is None:
-                self.prompt = prompt = self.get_bfs_prompts(x.size(0), edge_index)
+                self.prompt = prompt = self.get_prompt(x, x.size(0), edge_index)
             else:
                 prompt = self.prompt
             prompt_embs = self.build_prompt(learnable_embs,  prompt)
@@ -85,6 +87,25 @@ class TransNodeWrapper:
                 pass
         return embs
 
+    def get_prompt(self, x, num_nodes, edge_index):
+        if self.prompt_type == 'bfs':
+            return self.get_bfs_prompts(num_nodes, edge_index)
+        elif self.prompt_type == 'mad':
+            return self.get_MAD_prompts(x, edge_index)
+
+    def get_MAD_prompts(self, embeddings, edge_index):
+        assert self.k_prompt > 0
+        mad = MAD(embeddings, edge_index, mean=False)
+        return mad.topk(self.k_prompt, dim=-1).squeeze()
+
+    def get_MADtoI2NR_prompts(self, embeddings, edge_index):
+        assert self.k_prompt > 0
+        mad = MAD(embeddings, edge_index, mean=False)
+        same = int(self.k_prompt * 0.5)
+        different = self.k_prompt - same
+        #TODO get prompt by class
+
+
     def get_bfs_prompts(self, num_nodes, edge_index):
         assert self.k_prompt > 0
         target_k = self.k_prompt
@@ -123,6 +144,6 @@ class TransNodeWrapper:
         return list(prompt)
 
 def create_domain_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
-                                batch_size, type_trick, split_idx):
-    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts)
+                                batch_size, type_trick, split_idx, prompt_type):
+    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts, prompt_type)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)

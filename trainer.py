@@ -140,7 +140,7 @@ class trainer(object):
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
 
             return stats
-        elif self.args.task in ['dt', 'dtbfs', 'dtvgae']:
+        elif self.args.task in ['dt']:
             task = self.args.task
             ########################### pretrain
             self.args.task = 'edge'
@@ -183,11 +183,11 @@ class trainer(object):
                                                       self.args.prompt_aggr,
                                                       self.args.prompt_w_org_features, self.prompt_k, self.data,
                                                       self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx)
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type)
             else:
                 learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
                                                       self.args.prompt_w_org_features, self.prompt_k, self.data, self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx)
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
