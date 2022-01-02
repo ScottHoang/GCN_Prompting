@@ -41,12 +41,17 @@ class TransNodeWrapper:
             prompt_embs = self.build_prompt(learnable_embs,  prompt)
         else:
             prompt_embs = None
+        # norm features
+        # embs = (embs - embs.mean()) / embs.std()
+        # x = (x - x.mean()) / x.std()
+        # prompt_embs = (prompt_embs - prompt_embs.mean()) / prompt_embs.std()
         embs = self.concat_features(embs, x, prompt_embs)
+
 
         if self.is_mlp:
             return self.predictor(embs)
         else:
-            embs = self.norm(embs)
+            # embs = self.norm(embs)
             return self.predictor(embs, edge_index)
 
     def train(self):
@@ -95,8 +100,10 @@ class TransNodeWrapper:
 
     def get_MAD_prompts(self, embeddings, edge_index):
         assert self.k_prompt > 0
-        mad = MAD(embeddings, edge_index, mean=False)
-        return mad.topk(self.k_prompt, dim=-1).squeeze()
+        tgt = torch.ones(embeddings.size(0), embeddings.size(0)).to(embeddings.device)
+        mad_inverse = MAD(embeddings, tgt, mean=False) * -1
+        mad_inverse.fill_diagonal_(float('-inf'))
+        return mad_inverse.topk(self.k_prompt, dim=-1)[1].squeeze()
 
     def get_MADtoI2NR_prompts(self, embeddings, edge_index):
         assert self.k_prompt > 0

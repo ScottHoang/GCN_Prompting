@@ -618,9 +618,9 @@ def MAD(embeddings, targets=None, mean=True):
         dij.append(1 - torch.cosine_similarity(embeddings[i].unsqueeze(0), embeddings, dim=-1).unsqueeze(0))
     dij = torch.cat(dij, dim=0)
     dtgt = torch.mul(dij, targets)
-    dtgt = dtgt.sum(dim=-1) / targets.sum(dim=-1)
+    dtgt_norm = dtgt.sum(dim=-1) / targets.sum(dim=-1)
     if mean:
-        return dtgt.mean().item()
+        return dtgt_norm.mean().item()
     else:
         return dtgt
 
