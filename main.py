@@ -28,6 +28,9 @@ def main(args):
         trnr = trainer(args, seed)
         stats = trnr.train_and_test()
         if args.prompt_save_embs:
+            # pkgs.update({
+            # 'labels': trnr.data.y,
+            # 'edge_index': trnr.data.edge_index})
             save_prompt_embs(trnr, args, seed, stats)
         for k, v in stats.items():
             overall_stats[k].append(v)

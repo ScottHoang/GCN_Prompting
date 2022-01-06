@@ -1,5 +1,5 @@
 import argparse
-
+MODELS = ['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN', 'VGAE']
 
 class BaseOptions():
 
@@ -27,7 +27,7 @@ class BaseOptions():
                             help="0: test tricks, 1: test models")
 
         parser.add_argument('--type_model', type=str, default="GCN",
-                            choices=['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN', 'VGAE'])
+                            choices=MODELS)
         parser.add_argument('--type_trick', type=str, default="None")
         parser.add_argument('--layer_agg', type=str, default='concat',
                             choices=['concat', 'maxpool', 'attention', 'mean'],
@@ -80,6 +80,8 @@ class BaseOptions():
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
         parser.add_argument('--prompt-k', type=int, default=5)
+        parser.add_argument('--prompt-raw', action='store_true')
+        parser.add_argument('--prompt-continual', action='store_true')
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
@@ -89,6 +91,9 @@ class BaseOptions():
         parser.add_argument('--prompt-w-org-features', action='store_true')
         parser.add_argument('--prompt-save-embs', action='store_true')
         parser.add_argument('--prompt-get-mad', action='store_true')
+        parser.add_argument('--prompt-mode', type=str,  default='',
+                            help='setting all related mode; format: '
+                                 '{type_model}-{prompt_head}.{num_layer}-{prompt_layer}.{prompt-k}-{prompt-w-org-features}-{prompt-aggr}.{prompt_type}.{prompt-raw}-{prompt_continual}')
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,
@@ -132,7 +137,7 @@ class BaseOptions():
             args.activation = 'relu'
             # edge task specific
             args.use_splitted = False
-            args.practical_neg_sample = True
+            # args.practical_neg_sample = True
             args.observe_val_and_injection = False
             args.init_attribute = False
 
@@ -149,10 +154,10 @@ class BaseOptions():
             # args.dim_hidden = 256
             args.activation = 'relu'
             # edge task specific
-            args.use_splitted = False
-            args.practical_neg_sample = True
-            args.observe_val_and_injection = False
-            args.init_attribute = False
+            # args.use_splitted = False
+            # # args.practical_neg_sample = True
+            # args.observe_val_and_injection = False
+            # args.init_attribute = False
 
         elif args.dataset == 'Citeseer':
             args.num_feats = 3703
@@ -170,9 +175,9 @@ class BaseOptions():
             args.res_alpha = 0.2
             # edge task specific
             args.use_splitted = False
-            args.practical_neg_sample = True
-            args.observe_val_and_injection = False
-            args.init_attribute = False
+            # # args.practical_neg_sample = True
+            # args.observe_val_and_injection = False
+            # args.init_attribute = False
 
         elif args.dataset == 'ogbn-arxiv':
             args.num_feats = 128
@@ -310,4 +315,30 @@ class BaseOptions():
             args.lr = 0.005
             args.weight_decay = 5e-4
 
-        return args
+
+        if args.prompt_mode != "":
+            #'{type_model}-{prompt_head}.{num_layer}-{prompt_layer}.{prompt-k}-{prompt-w-org-features}-{prompt-aggr}.{prompt_type}.{raw}-{contiual}')
+            settings = args.prompt_mode.split('.')
+            assert len(settings) == 5
+            assert len(settings[0].split('-')) == 2
+            type_model, prompt_head = settings[0].split('-')
+            assert type_model in MODELS
+            args.type_model = type_model
+            args.prompt_head = prompt_head
+            assert  len(settings[1].split('-')) == 2
+            args.num_layers, args.prompt_layer = [int(i) for i in settings[1].split('-')]
+            if len(settings[2].split('-')) == 2:
+                args.prompt_k, args.prompt_aggr = settings[2].split('-')
+            elif len(settings[2].split('-')) == 3:
+                args.prompt_w_org_features = True
+                args.prompt_k, _, args.prompt_aggr = settings[2].split('-')
+            else:
+                raise ValueError
+            args.prompt_k = int(args.prompt_k)
+            args.prompt_type = settings[3]
+
+            assert len(settings[4].split('-')) == 2
+            raw, continual = settings[4].split('-')
+            args.prompt_raw = raw == 'r'
+            args.prompt_continual = continual == 'c'
+            return args

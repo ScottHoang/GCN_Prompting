@@ -1,3 +1,4 @@
+import collections
 import random
 
 from .edge_task import EdgeLearner
@@ -6,24 +7,29 @@ from utils import TaskPredictor
 import torch
 from utils import CompoundOptimizers
 import torch_geometric.transforms as T
-from utils import MAD
-
+from utils import MAD, shortest_path
+from torch.nn.functional import dropout
 class TransNodeWrapper:
-    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data_features, k_prompt, prompt_type):
+    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompt, prompt_type, prompt_raw, prompt_continual):
         self.model = model
         self.prompt_type = prompt_type
         self.predictor = predictor
         self.prompt_mode = prompt_mode
+        self.prompt_continual = prompt_continual
         self.concat_mode = concat_mode
-        self.data_features = data_features
+        self.data = data
         self.task = task
         self.k_prompt = k_prompt
         self.embeddings = embeddings
         self.prompt = None
+        self.prompt_raw = prompt_raw
         # self.prompts = prompts
         self.is_mlp = isinstance(self.predictor, TaskPredictor)
         if not self.is_mlp:
             self.norm = lambda x: x.div_(x.sum(dim=-1, keepdims=True).clamp(min=1.))
+
+        self.stats = collections.defaultdict(list)
+        self.index = self.cos_distance = None
 
         self.init_optimizer()
 
@@ -31,22 +37,30 @@ class TransNodeWrapper:
         self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer])
 
     def __call__(self, x, edge_index=None):
-        embs = self.embeddings.static_embs
-        learnable_embs = self.embeddings.embs
+        if self.prompt_raw:
+            learnable_embs = self.embeddings.embs_raw
+            embs = self.embeddings.embs
+            emb_tgt = None
+            emb_src = learnable_embs
+        else:
+            learnable_embs = self.embeddings.embs
+            embs = self.embeddings.static_embs
+            emb_tgt = learnable_embs
+            emb_src = embs
         if self.k_prompt:
-            if self.prompt is None:
-                self.prompt = prompt = self.get_prompt(x, x.size(0), edge_index)
+            if self.prompt_continual:
+                self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
             else:
-                prompt = self.prompt
-            prompt_embs = self.build_prompt(learnable_embs,  prompt)
+                if self.prompt is None:
+                    self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
+                else:
+                    prompt = self.prompt
+
+            prompt_embs = self.build_prompt(learnable_embs, prompt)
         else:
             prompt_embs = None
-        # norm features
-        # embs = (embs - embs.mean()) / embs.std()
-        # x = (x - x.mean()) / x.std()
-        # prompt_embs = (prompt_embs - prompt_embs.mean()) / prompt_embs.std()
-        embs = self.concat_features(embs, x, prompt_embs)
-
+        # self.analyze(embs, prompt_embs)
+        embs = self.concat_features(embs, prompt_embs, x)
 
         if self.is_mlp:
             return self.predictor(embs)
@@ -54,16 +68,22 @@ class TransNodeWrapper:
             # embs = self.norm(embs)
             return self.predictor(embs, edge_index)
 
+    # def analyze(self, embs, prompts):
+    #     if self.training:
+
+
     def train(self):
         self._cache = True
         self.predictor.train()
         self.model.eval()
+        self.training = True
 
     def eval(self):
         self._cache = True
         self._cache_embs = None
         self.model.eval()
         self.predictor.eval()
+        self.training = False
 
     def build_prompt(self, embs, prompts_idx=None):
         prompts = embs[prompts_idx]
@@ -92,28 +112,48 @@ class TransNodeWrapper:
                 pass
         return embs
 
-    def get_prompt(self, x, num_nodes, edge_index):
-        if self.prompt_type == 'bfs':
-            return self.get_bfs_prompts(num_nodes, edge_index)
-        elif self.prompt_type == 'mad':
-            return self.get_MAD_prompts(x, edge_index)
+    def get_prompt(self, x_src, x_tgt, num_nodes, edge_index):
+        self.index = getattr(self, f"get_{self.prompt_type}_prompts")(x_src, x_tgt, num_nodes, edge_index)
+        if self.training:
+            self.analyze_prompt(x_src, x_tgt, self.index)
+        return self.index
+    
+    def analyze_prompt(self, src, tgt, index):
+        tgt = src if tgt is None else tgt
+        neighbor_distance = self.cos_distance[index] # N
 
-    def get_MAD_prompts(self, embeddings, edge_index):
+
+
+
+    def get_madmax_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         assert self.k_prompt > 0
-        tgt = torch.ones(embeddings.size(0), embeddings.size(0)).to(embeddings.device)
-        mad_inverse = MAD(embeddings, tgt, mean=False) * -1
-        mad_inverse.fill_diagonal_(float('-inf'))
-        return mad_inverse.topk(self.k_prompt, dim=-1)[1].squeeze()
+        tgt = torch.ones(num_nodes, num_nodes).to(x_src.device)
+        self.cos_distance = cos_distance = MAD(x_src, tgt, mean=False, emb_tgt=x_tgt)
+        cos_distance *= -1
+        cos_distance.fill_diagonal_(float('-inf'))
 
-    def get_MADtoI2NR_prompts(self, embeddings, edge_index):
+        return cos_distance.topk(self.k_prompt, dim=-1)[1].squeeze()
+
+    def get_madmin_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         assert self.k_prompt > 0
-        mad = MAD(embeddings, edge_index, mean=False)
-        same = int(self.k_prompt * 0.5)
-        different = self.k_prompt - same
-        #TODO get prompt by class
+        tgt = torch.ones(num_nodes, num_nodes).to(x_src.device)
+        self.cos_distance = cos_distance = MAD(x_src, tgt, mean=False, emb_tgt=x_tgt)
+        cos_distance.fill_diagonal_(float('-inf'))
+        return cos_distance.topk(self.k_prompt, dim=-1)[1].squeeze()
 
+    def get_mad2distance_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        assert hasattr(self, 'distance')
+        distance = self.distance
+        tgt = torch.ones(num_nodes, num_nodes).to(x_src.device)
+        self.cos_distance = cos_distance = MAD(x_src, tgt, mean=False, emb_tgt=x_tgt)
+        # cos_distance.fill_diagonal_(-1)
+        distance[distance.eq(510)] = -1
+        distance[distance.eq(-1)] = distance.max() + 1
+        score = distance / cos_distance
+        index = score.topk(self.k_prompt, dim=-1)[1].squeeze()
+        return index
 
-    def get_bfs_prompts(self, num_nodes, edge_index):
+    def get_bfs_prompts(self, x, num_nodes, edge_index):
         assert self.k_prompt > 0
         target_k = self.k_prompt
         all_prompts = []
@@ -150,7 +190,12 @@ class TransNodeWrapper:
             prompt = random.sample(prompt, target)
         return list(prompt)
 
+    def record_stats(self, stats):
+        for k ,v in stats:
+            self.stats[k].append(v)
+    
+
 def create_domain_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
-                                batch_size, type_trick, split_idx, prompt_type):
-    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts, prompt_type)
+                                batch_size, type_trick, split_idx, prompt_type, prompt_raw, prompt_continual):
+    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompts, prompt_type, prompt_raw, prompt_continual)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)

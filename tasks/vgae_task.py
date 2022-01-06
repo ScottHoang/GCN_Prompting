@@ -109,6 +109,7 @@ def create_vgae_task(model, batch_size, data):
     return VGAELearner(model, batch_size, data)
 
 def create_vge_node_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
-                                  batch_size, type_trick, split_idx, prompt_type):
-    wrap = VGAENodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data.x, k_prompts, prompt_type)
+                                  batch_size, type_trick, split_idx, prompt_type, prompt_raw, prompt_continual):
+    wrap = VGAENodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompts, prompt_type, prompt_raw,
+                           prompt_continual)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)

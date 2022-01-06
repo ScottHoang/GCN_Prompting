@@ -5,14 +5,12 @@ import torch
 import torch.nn as nn
 
 class Embeddings(nn.Module):
-    def __init__(self, embs, lr, weight_decay, prompt_size=5, init_as_zero=False):
+    def __init__(self, embs, raw, lr, weight_decay, prompt_size=5, init_as_zero=False):
         super().__init__()
         self.lr = lr
         self.static_embs = embs
-        if not init_as_zero:
-            self.embs = nn.Parameter(embs.clone(), requires_grad=True)
-        else:
-            self.embs = nn.Parameter(torch.zeros(prompt_size, self.static_embs.size(1)), requires_grad=True)
+        self.embs = nn.Parameter(embs.clone(), requires_grad=True)
+        self.embs_raw = nn.Parameter(raw.clone(), requires_grad=True)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=weight_decay)
 
 

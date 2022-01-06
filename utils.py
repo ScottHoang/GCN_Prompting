@@ -16,6 +16,12 @@ import sys
 import os.path
 
 from sklearn.model_selection import StratifiedShuffleSplit
+from torch_geometric.utils import to_dense_adj
+import numpy as np
+import pyximport
+
+pyximport.install(setup_args={"include_dirs": np.get_include()})
+import algos
 
 cur_dir = os.path.dirname(os.path.realpath(__file__))
 par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -611,18 +617,29 @@ def corrcoef(x):
     return c
 
 @torch.no_grad()
-def MAD(embeddings, targets=None, mean=True):
-    n = embeddings.size(0)#
+def MAD(emb_src, mask=None, mean=True, emb_tgt=None):
+    n = emb_src.size(0)#
     dij = []
-    for i in range(n):
-        dij.append(1 - torch.cosine_similarity(embeddings[i].unsqueeze(0), embeddings, dim=-1).unsqueeze(0))
-    dij = torch.cat(dij, dim=0)
-    dtgt = torch.mul(dij, targets)
-    dtgt_norm = dtgt.sum(dim=-1) / targets.sum(dim=-1)
+    if emb_tgt is None:
+        for i in range(n-1):
+            distance = 1 - torch.cosine_similarity(emb_src[i], emb_src[i::], dim=-1)
+            distance = F.pad(distance, (i,0))
+            dij.append(distance.unsqueeze(0))
+        dij.append(torch.zeros(1, mask.size(1)).to(mask.device))
+        dij = torch.cat(dij, dim=0)
+        dij = dij + dij.t()
+    else:
+        for i in range(n):
+            distance = 1 - torch.cosine_similarity(emb_src[i], emb_tgt, dim=-1)
+            dij.append(distance.unsqueeze(0))
+        dij = torch.cat(dij, dim=0)
+    dtgt = torch.mul(dij, mask)
+    dtgt_norm = dtgt.sum(dim=-1) / mask.sum(dim=-1)
     if mean:
         return dtgt_norm.mean().item()
     else:
         return dtgt
+
 
 @torch.no_grad()
 def I2NR(edges, labels, hops=2):
@@ -642,3 +659,16 @@ def I2NR(edges, labels, hops=2):
     missing_node_ratio = len(nodes) / labels.size(0)
     weighted_mean = mean_i2nr * missing_node_ratio
     return mean_i2nr, weighted_mean
+
+
+def shortest_path(num_nodes, edge_index):
+    adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()
+    distance, path = algos.floyd_warshall(adj)
+    # distance = np.ones((num_nodes, num_nodes)) * float('inf')
+    # distance[edge_index[0].cpu(), edge_index[1].cpu()] = 1
+    # np.fill_diagonal(distance, 0)
+    # for k in range(num_nodes):
+    #     for i in range(num_nodes):
+    #         for j in range(num_nodes):
+    #             distance[i,j] = min(distance[i,j], distance[i,k] + distance[k,j])
+    return torch.tensor(distance).to(edge_index.device)

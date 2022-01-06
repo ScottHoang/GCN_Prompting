@@ -13,6 +13,7 @@ from Dataloader import load_data, load_ogbn, prepare_edge_data
 from tricks import TricksComb  # TricksCombSGC
 from utils import AcontainsB
 from utils import TaskPredictor
+from utils import shortest_path
 from utils import CompoundOptimizers
 from utils import StratifiedSampler
 from sklearn.metrics import roc_auc_score, average_precision_score
@@ -71,9 +72,15 @@ class trainer(object):
             dim_hidden = dim_hidden // 2
         in_c = dim_hidden
         if self.args.prompt_k:
-            if args.prompt_aggr == 'concat':
-                in_c *= args.prompt_k
-            in_c += dim_hidden
+            if self.prompt_raw:
+                raw_c = self.data.x.size(1)
+                if args.prompt_aggr == 'concat':
+                    raw_c *= args.prompt_k
+                in_c = dim_hidden + raw_c
+            else:
+                if args.prompt_aggr == 'concat':
+                    in_c *= args.prompt_k
+                in_c += dim_hidden
         if args.prompt_w_org_features:
             in_c += self.data.x.size(-1)
         return in_c
@@ -140,7 +147,7 @@ class trainer(object):
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
 
             return stats
-        elif self.args.task in ['dt']:
+        elif self.args.task in ['dt', 'dtvgae']:
             task = self.args.task
             ########################### pretrain
             self.args.task = 'edge'
@@ -155,17 +162,17 @@ class trainer(object):
             # init predictor
             self.args.task = task
             #
-            if task in ['dt', 'dtbfs', 'dtvgae']:
+            if task in ['dt', 'dtvgae']:
                 if self.type_model == 'VGAE':
                     self.model.eval()
                     _, mu, logvar = self.model(self.data.x, self.data.edge_index)
-                    self.prompt_embs = Embeddings(mu.detach().clone(),
+                    self.prompt_embs = Embeddings(mu.detach().clone(), self.data.x.clone(),
                                                   lr=self.prompt_lr, weight_decay=self.weight_decay)
                     self.prompt_embs.mu = mu
                     self.prompt_embs.logvar = logvar
                 else:
                     embs = self.model(self.data.x, self.data.edge_index)
-                    self.prompt_embs = Embeddings(embs.detach().clone(),
+                    self.prompt_embs = Embeddings(embs.detach().clone(), self.data.x.clone(),
                                                   lr=self.prompt_lr, weight_decay=self.weight_decay)
                 self.node_predictor, optimizer_node = self.init_predictor_by_tasks(task)
             else:
@@ -183,11 +190,15 @@ class trainer(object):
                                                       self.args.prompt_aggr,
                                                       self.args.prompt_w_org_features, self.prompt_k, self.data,
                                                       self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type)
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
+                                                        self.prompt_continual)
             else:
                 learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
                                                       self.args.prompt_w_org_features, self.prompt_k, self.data, self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type)
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
+                                                      self.prompt_continual)
+            if self.prompt_k and self.prompt_type == 'mad2distance':
+                learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
