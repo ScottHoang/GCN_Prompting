@@ -117,6 +117,7 @@ class BaseOptions():
         parser.add_argument('--graph_dropout', type=float, default=0.2,
                             help="graph dropout rate (for dropout tricks)")  # 5e-4
         parser.add_argument('--layerwise_dropout', action='store_true', default=False)
+        parser.add_argument('--plot_info', action='store_true', default=False)
 
         args = parser.parse_args()
         args = self.reset_dataset_dependent_parameters(args)

@@ -183,24 +183,11 @@ class trainer(object):
                 raise ValueError
 
             self.prompt_embs.to(self.device)
-            #
-            # if task in ['dtbfs', 'dtvgae']:
-            #     self.bfs_prompts = self.get_bfs_prompts()
-            # else:
-            #     self.bfs_prompts = None
-            #
-            if task == 'dtvgae':
-                learner = create_vge_node_transfer_task(self.model, self.node_predictor, self.prompt_embs, task,
-                                                      self.args.prompt_aggr,
-                                                      self.args.prompt_w_org_features, self.prompt_k, self.data,
-                                                      self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
-                                                        self.prompt_continual)
-            else:
-                learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
-                                                      self.args.prompt_w_org_features, self.prompt_k, self.data, self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
-                                                      self.prompt_continual)
+            init_fn = create_domain_transfer_task if task == 'dt' else create_vge_node_transfer_task
+            learner = init_fn(self.model, self.node_predictor, self.prompt_embs, self.args, task,
+                                                  self.data,
+                                                  self.split_idx)
+
             if self.prompt_k and self.prompt_type == 'm2d':
                 learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
             # train /test fn init
@@ -209,10 +196,8 @@ class trainer(object):
             stats.update(pretrain_stats)
 
             internal_stats = learner.model.stats
-            self.plot_figures(internal_stats, all_stats)
-
-
-
+            if self.plot_info:
+                self.plot_figures(internal_stats, all_stats)
             return stats
 
         elif self.args.task == 'nodebs':
