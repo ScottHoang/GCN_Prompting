@@ -63,11 +63,9 @@ class TransNodeWrapper:
                 else:
                     prompt = self.prompt
 
-            prompt_embs = self.build_prompt(learnable_embs, prompt)
-        else:
-            prompt_embs = None
-        # self.analyze(embs, prompt_embs)
-        embs = self.concat_features(embs, prompt_embs, x)
+            embs = self.build_prompt(embs, learnable_embs, prompt)
+        if self.concat_mode:
+            embs = torch.cat([embs, x], dim=-1)
 
         if self.is_mlp:
             return self.predictor(embs)
@@ -89,8 +87,8 @@ class TransNodeWrapper:
         self.predictor.eval()
         self.training = False
 
-    def build_prompt(self, embs, prompts_idx=None):
-        prompts = embs[prompts_idx]
+    def build_prompt(self, embs, prompt_embs, prompts_idx=None):
+        prompts = prompt_embs[prompts_idx]
         pmode = self.prompt_mode
         if pmode == 'concat':
             prompts = prompts.reshape(prompts.size(0), -1)
@@ -100,7 +98,8 @@ class TransNodeWrapper:
             prompts = prompts.mean(dim=1)
         else:
             raise ValueError
-        return prompts
+        embs = torch.cat([embs, prompts], dim=-1)
+        return embs
 
     def concat_features(self, embs, data_features, prompts=None):
         cmode = self.concat_mode
