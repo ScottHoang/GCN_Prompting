@@ -60,20 +60,14 @@ class TransNodeWrapper:
 
             if self.training:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
-            prompt_embs = self.build_prompt(learnable_embs, prompt)
-        else:
-            prompt_embs = None
-        # self.analyze(embs, prompt_embs)
-        embs = self.concat_features(embs, prompt_embs, x)
+            embs = self.build_prompt(embs, learnable_embs, prompt)
+        if self.concat_mode:
+            embs = torch.cat([embs, x], dim=-1)
 
         if self.is_mlp:
             return self.predictor(embs)
         else:
-            # embs = self.norm(embs)
             return self.predictor(embs, edge_index)
-
-    # def analyze(self, embs, prompts):
-    #     if self.training:
 
 
     def train(self):
@@ -89,8 +83,8 @@ class TransNodeWrapper:
         self.predictor.eval()
         self.training = False
 
-    def build_prompt(self, embs, prompts_idx=None):
-        prompts = embs[prompts_idx]
+    def build_prompt(self, embs, prompt_embs, prompts_idx=None):
+        prompts = prompt_embs[prompts_idx]
         pmode = self.prompt_mode
         if pmode == 'concat':
             prompts = prompts.reshape(prompts.size(0), -1)
@@ -100,26 +94,11 @@ class TransNodeWrapper:
             prompts = prompts.mean(dim=1)
         else:
             raise ValueError
-        return prompts
-
-    def concat_features(self, embs, data_features, prompts=None):
-        cmode = self.concat_mode
-        if cmode:
-            if prompts is not None:
-                embs = torch.cat([embs, prompts, data_features], dim=-1)
-            else:
-                embs = torch.cat([embs, data_features], dim=-1)
-        else:
-            if prompts is not None:
-                embs = torch.cat([embs, prompts], dim=-1)
-            else:
-                pass
+        embs = torch.cat([embs, prompts], dim=-1)
         return embs
 
     def get_prompt(self, x_src, x_tgt, num_nodes, edge_index):
         self.index = getattr(self, f"get_{self.prompt_type}_prompts")(x_src, x_tgt, num_nodes, edge_index)
-        # if self.training:
-        #     self.analyze_prompt(x_src, x_tgt, self.index)
         return self.index
     
     def analyze_prompt(self, src, tgt, index):
