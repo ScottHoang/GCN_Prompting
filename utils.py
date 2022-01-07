@@ -89,7 +89,7 @@ class TaskPredictor(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
                  dropout, lr, weight_decay):
         super(TaskPredictor, self).__init__()
-
+        self.num_feats = in_channels
         self.lins = torch.nn.ModuleList()
         # self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
         hidden_channels = in_channels
@@ -110,6 +110,7 @@ class TaskPredictor(torch.nn.Module):
             x = x_i * x_j
         else:
             x = x_i
+        x = F.dropout(x, p=self.dropout, training=self.training)
         for lin in self.lins[:-1]:
             x = lin(x)
             x = F.relu(x)
@@ -643,7 +644,7 @@ def MAD(emb_src, mask=None, mean=True, emb_tgt=None):
 
 @torch.no_grad()
 def I2NR(edges, labels, hops=2):
-    edges = to_undirected(edges)
+    # edges = to_undirected(edges)
     i2nr = []
     nodes = set(edges.reshape(-1).cpu().tolist())
     for node in nodes:
@@ -664,11 +665,4 @@ def I2NR(edges, labels, hops=2):
 def shortest_path(num_nodes, edge_index):
     adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()
     distance, path = algos.floyd_warshall(adj)
-    # distance = np.ones((num_nodes, num_nodes)) * float('inf')
-    # distance[edge_index[0].cpu(), edge_index[1].cpu()] = 1
-    # np.fill_diagonal(distance, 0)
-    # for k in range(num_nodes):
-    #     for i in range(num_nodes):
-    #         for j in range(num_nodes):
-    #             distance[i,j] = min(distance[i,j], distance[i,k] + distance[k,j])
     return torch.tensor(distance).to(edge_index.device)

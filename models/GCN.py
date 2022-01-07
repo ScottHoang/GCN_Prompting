@@ -30,7 +30,6 @@ class GCN(nn.Module):
             self.layers_bn.append(torch.nn.BatchNorm1d(self.dim_hidden))
         elif self.type_norm == 'pair':
             self.layers_bn.append(pair_norm())
-
         cur_dim = self.num_feats
         for _ in range(self.num_layers - 1):
             self.layers_GCN.append(
