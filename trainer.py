@@ -93,8 +93,7 @@ class trainer(object):
     def init_predictor_by_type(self, type, in_c, args=None):
         if type == 'mlp':
             node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
-                                           args.dropout, lr=self.args.prompt_head_lr, weight_decay=self.weight_decay).to(
-                self.device)
+                                           args.dropout, lr=self.args.lr, weight_decay=self.weight_decay).to(self.device)
             optimizer_node = node_predictor.optimizer
         else:
             Model = getattr(importlib.import_module("models"), self.prompt_head)
@@ -102,7 +101,6 @@ class trainer(object):
             args.num_feats = in_c
             args.num_layers = self.args.prompt_layer
             args.num_classes = self.num_classes
-
             #
             node_predictor = Model(args).to(self.device)
             optimizer_node = node_predictor.optimizer
@@ -185,22 +183,24 @@ class trainer(object):
                 raise ValueError
 
             self.prompt_embs.to(self.device)
+            #
+            # if task in ['dtbfs', 'dtvgae']:
+            #     self.bfs_prompts = self.get_bfs_prompts()
+            # else:
+            #     self.bfs_prompts = None
+            #
             if task == 'dtvgae':
                 learner = create_vge_node_transfer_task(self.model, self.node_predictor, self.prompt_embs, task,
-                                                        self.args.prompt_aggr,
-                                                        self.args.prompt_w_org_features, self.prompt_k, self.data,
-                                                        self.dataset,
-                                                        self.args.batch_size, self.type_trick, self.split_idx,
-                                                        self.prompt_type, self.prompt_raw,
-                                                        self.prompt_continual, prompt_record=self.prompt_record)
-            else:
-                learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task,
                                                       self.args.prompt_aggr,
                                                       self.args.prompt_w_org_features, self.prompt_k, self.data,
                                                       self.dataset,
-                                                      self.args.batch_size, self.type_trick, self.split_idx,
-                                                      self.prompt_type, self.prompt_raw,
-                                                      self.prompt_continual, prompt_record=self.prompt_record)
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
+                                                        self.prompt_continual)
+            else:
+                learner = create_domain_transfer_task(self.model, self.node_predictor, self.prompt_embs, task, self.args.prompt_aggr,
+                                                      self.args.prompt_w_org_features, self.prompt_k, self.data, self.dataset,
+                                                      self.args.batch_size, self.type_trick, self.split_idx, self.prompt_type, self.prompt_raw,
+                                                      self.prompt_continual)
             if self.prompt_k and self.prompt_type == 'm2d':
                 learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
             # train /test fn init
@@ -209,8 +209,9 @@ class trainer(object):
             stats.update(pretrain_stats)
 
             internal_stats = learner.model.stats
-            if self.prompt_record:
-                self.plot_figures(internal_stats, all_stats)
+            self.plot_figures(internal_stats, all_stats)
+
+
 
             return stats
 
@@ -224,8 +225,7 @@ class trainer(object):
             self.node_predictor, optimizer_node = self.init_predictor_by_tasks('dt')
             self.bfs_prompts = None
             #
-            learner = create_nodeBaseLine_task(self.model, self.node_predictor, self.args.batch_size, self.data,
-                                               self.dataset,
+            learner = create_nodeBaseLine_task(self.model, self.node_predictor, self.args.batch_size, self.data, self.dataset,
                                                self.type_trick, self.split_idx)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
@@ -286,7 +286,7 @@ class trainer(object):
         return stats
 
     def get_bfs_prompts(self):
-        target_k = self.args.prompt_k + 1
+        target_k = self.args.prompt_k+1
         all_prompts = []
         for i in range(self.data.num_nodes):
             prompt = self.bfs(i, target_k)
@@ -300,8 +300,8 @@ class trainer(object):
         return all_prompts
 
     def bfs(self, node, target):
-        prompt = set([])
-        queue = [node]
+        prompt=set([])
+        queue=[node]
         seen = set()
 
         while queue:
@@ -312,9 +312,9 @@ class trainer(object):
                 for n in neighbors:
                     prompt.add(n)
                     queue.append(n)
-                    if len(prompt) == target * 3:
+                    if len(prompt) == target*3:
                         break
-            if len(prompt) == target * 3:
+            if len(prompt) == target*3:
                 break
             seen.add(s)
         if len(prompt) > target:
@@ -333,7 +333,7 @@ class trainer(object):
         if not os.path.isdir(root):
             os.makedirs(root)
 
-        fig, axes = plt.subplots(len(stats) + 2, 1, figsize=(10, 10))
+        fig, axes = plt.subplots(len(stats)+2, 1, figsize=(10, 10))
         for i, (y_label, values) in enumerate(stats.items()):
             ax = axes[i]
             values = np.array(values)
@@ -345,3 +345,11 @@ class trainer(object):
         axes[-1].plot(np.arange(len(distances['mean_i2nr'])), distances['mean_i2nr'])
         axes[-1].set_ylabel('mean_i2nr')
         plt.savefig(os.path.join(root, 'img.png'))
+
+
+
+
+
+
+
+

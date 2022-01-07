@@ -79,13 +79,11 @@ class BaseOptions():
         # batch size for edge
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
-        parser.add_argument('--prompt-record', action='store_true')
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-raw', action='store_true')
         parser.add_argument('--prompt-continual', action='store_true')
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
-        parser.add_argument('--prompt-head-lr', type=float, default=5e-2)
         parser.add_argument('--prompt-layer', type=int, default=2)
         parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')
         parser.add_argument('--prompt-type', type=str, default='bfr', help='bfs|mad')

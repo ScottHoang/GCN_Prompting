@@ -10,12 +10,8 @@ from utils import CompoundOptimizers
 import torch_geometric.transforms as T
 from utils import MAD, shortest_path
 from torch.nn.functional import dropout
-import torch.nn as nn
 class TransNodeWrapper:
-    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompt, prompt_type, prompt_raw,
-                 prompt_continual, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
+    def __init__(self, model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompt, prompt_type, prompt_raw, prompt_continual):
         self.model = model
         self.prompt_type = prompt_type
         self.predictor = predictor
@@ -39,7 +35,6 @@ class TransNodeWrapper:
         self.init_optimizer()
         self.training = True
 
-
     def init_optimizer(self):
         self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer])
 
@@ -51,7 +46,7 @@ class TransNodeWrapper:
             emb_src = learnable_embs
         else:
             learnable_embs = self.embeddings.embs
-            embs = self.embeddings.static_embs
+            embs = self.embeddings.embs
             emb_tgt = learnable_embs
             emb_src = embs
         if self.k_prompt:
@@ -63,15 +58,22 @@ class TransNodeWrapper:
                 else:
                     prompt = self.prompt
 
-            embs = self.build_prompt(embs, learnable_embs, prompt)
-        if self.concat_mode:
-            embs = torch.cat([embs, x], dim=-1)
+            if self.training:
+                self.analyze_prompt(emb_src, emb_tgt, prompt)
+            prompt_embs = self.build_prompt(learnable_embs, prompt)
+        else:
+            prompt_embs = None
+        # self.analyze(embs, prompt_embs)
+        embs = self.concat_features(embs, prompt_embs, x)
 
         if self.is_mlp:
             return self.predictor(embs)
         else:
             # embs = self.norm(embs)
             return self.predictor(embs, edge_index)
+
+    # def analyze(self, embs, prompts):
+    #     if self.training:
 
 
     def train(self):
@@ -87,8 +89,8 @@ class TransNodeWrapper:
         self.predictor.eval()
         self.training = False
 
-    def build_prompt(self, embs, prompt_embs, prompts_idx=None):
-        prompts = prompt_embs[prompts_idx]
+    def build_prompt(self, embs, prompts_idx=None):
+        prompts = embs[prompts_idx]
         pmode = self.prompt_mode
         if pmode == 'concat':
             prompts = prompts.reshape(prompts.size(0), -1)
@@ -98,8 +100,7 @@ class TransNodeWrapper:
             prompts = prompts.mean(dim=1)
         else:
             raise ValueError
-        embs = torch.cat([embs, prompts], dim=-1)
-        return embs
+        return prompts
 
     def concat_features(self, embs, data_features, prompts=None):
         cmode = self.concat_mode
@@ -210,6 +211,6 @@ class TransNodeWrapper:
     
 
 def create_domain_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
-                                batch_size, type_trick, split_idx, prompt_type, prompt_raw, prompt_continual, **kwargs):
-    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompts, prompt_type, prompt_raw, prompt_continual, **kwargs)
+                                batch_size, type_trick, split_idx, prompt_type, prompt_raw, prompt_continual):
+    wrap = TransNodeWrapper(model, predictor, embeddings, task, prompt_mode, concat_mode, data, k_prompts, prompt_type, prompt_raw, prompt_continual)
     return NodeLearner(wrap, batch_size, data, dataset, type_trick, split_idx)
