@@ -78,13 +78,17 @@ class trainer(object):
         if self.args.prompt_k:
             if self.prompt_raw:
                 raw_c = self.data.x.size(1)
-                if args.prompt_aggr == 'concat':
+                if args.prompt_aggr in ['concat']:
                     raw_c *= args.prompt_k
                 in_c = dim_hidden + raw_c
             else:
-                if args.prompt_aggr == 'concat':
+                if args.prompt_aggr in ['concat']:
                     in_c *= args.prompt_k
-                in_c += dim_hidden
+                    in_c += dim_hidden
+                elif self.prompt_aggr == 'att':
+                    pass
+                else:
+                    in_c += dim_hidden
         if args.prompt_w_org_features:
             in_c += self.data.x.size(-1)
         return in_c
@@ -141,6 +145,7 @@ class trainer(object):
 
     def train_and_test(self):
         if self.args.task in ['node', 'edge']:
+            self.set_dataloader()
             if self.args.task == 'node':
                 learner = create_node_task(self.model, self.args.batch_size, self.data, self.dataset, self.type_trick,
                                            self.split_idx)
@@ -148,7 +153,7 @@ class trainer(object):
                 learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)
 
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
-            stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
+            stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)
 
             return stats
         elif self.args.task in ['dt', 'dtvgae']:
@@ -157,11 +162,11 @@ class trainer(object):
             self.args.task = 'edge'
             self.set_dataloader()
             if self.type_model == 'VGAE':
-                edge_learner = create_vgae_task(self.model, self.args.batch_size, self.data)
+                edge_learner = create_vgae_task(self.model, self.args.batch_size, self.data, self.prompt_temp)
             else:
-                edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)
+                edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data, self.prompt_temp)
             train_fn = lambda: self.sequential_run(edge_learner.task_train, edge_learner.task_test)
-            pretrain_stats, _ = self.train_test_frame(train_fn, edge_learner.stats)
+            pretrain_stats, _ = self.train_test_frame(train_fn, edge_learner.stats, self.epochs)
             ########################### predictor training
             # init predictor
             self.args.task = task
@@ -171,13 +176,13 @@ class trainer(object):
                     self.model.eval()
                     _, mu, logvar = self.model(self.data.x, self.data.edge_index)
                     self.prompt_embs = Embeddings(mu.detach().clone(), self.data.x.clone(),
-                                                  lr=self.prompt_lr, weight_decay=self.weight_decay)
+                                                  lr=self.prompt_lr, weight_decay=self.weight_decay, epochs=self.epochs)
                     self.prompt_embs.mu = mu
                     self.prompt_embs.logvar = logvar
                 else:
                     embs = self.model(self.data.x, self.data.edge_index)
                     self.prompt_embs = Embeddings(embs.detach().clone(), self.data.x.clone(),
-                                                  lr=self.prompt_lr, weight_decay=self.weight_decay)
+                                                  lr=self.prompt_lr, weight_decay=self.weight_decay, epochs=self.epochs)
                 self.node_predictor, optimizer_node = self.init_predictor_by_tasks(task)
             else:
                 raise ValueError
@@ -188,11 +193,10 @@ class trainer(object):
                                                   self.data,
                                                   self.split_idx)
 
-            if self.prompt_k and self.prompt_type == 'm2d':
-                learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
+            learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
-            stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
+            stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)
             stats.update(pretrain_stats)
 
             internal_stats = learner.model.stats
@@ -240,13 +244,13 @@ class trainer(object):
             prompt_stats = self.train_test_frame(train_fn, stat_fn)
             return prompt_stats
 
-    def train_test_frame(self, runs_fn, stats_fn):
+    def train_test_frame(self, runs_fn, stats_fn, epochs=1000):
         best_stats = None
         all_stats = collections.defaultdict(list)
         patience = self.args.patience
         bad_counter = 0.
         # val_loss_history = []
-        for epoch in range(self.args.epochs):
+        for epoch in range(epochs):
             stats = runs_fn()
             for k, v in stats.items():
                 all_stats[k].append(v)
@@ -312,7 +316,7 @@ class trainer(object):
         return utils.MAD(embs, tgt)
 
     def plot_figures(self, distances, stats):
-        root = os.path.join('figures', self.dataset, self.prompt_mode, self.dataset,
+        root = os.path.join('figures', self.prompt_mode, self.dataset,
                             datetime.datetime.now().strftime('%y-%m-%d||%H:%M')
                             )
         if not os.path.isdir(root):
@@ -329,7 +333,10 @@ class trainer(object):
         axes[-2].set_ylabel('mean_distance')
         axes[-1].plot(np.arange(len(distances['mean_i2nr'])), distances['mean_i2nr'])
         axes[-1].set_ylabel('mean_i2nr')
+
         plt.savefig(os.path.join(root, 'img.png'))
+        torch.save({'distance': distances, 'stats': stats}, os.path.join(root, 'data.pth'))
+
 
 
 

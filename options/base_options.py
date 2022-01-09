@@ -82,6 +82,7 @@ class BaseOptions():
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-raw', action='store_true')
         parser.add_argument('--prompt-continual', action='store_true')
+        parser.add_argument('--prompt-temp', type=float, default=1.0)
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
@@ -94,6 +95,13 @@ class BaseOptions():
         parser.add_argument('--prompt-mode', type=str,  default='',
                             help='setting all related mode; format: '
                                  '{type_model}-{prompt_head}.{num_layer}-{prompt_layer}.{prompt-k}-{prompt-w-org-features}-{prompt-aggr}.{prompt_type}.{prompt-raw}-{prompt_continual}')
+        ###
+        parser.add_argument('--att-head', type=int, default=8)
+        parser.add_argument('--att-num-layer', type=int, default=6)
+        parser.add_argument('--att-dropout', type=float, default=0.5)
+        parser.add_argument('--att-lr', type=float, default=1e-3)
+
+
         ###
         # Hyperparameters for specific model, such as GCNII, EdgeDropping, APPNNP, PairNorm
         parser.add_argument('--alpha', type=float, default=0.1,
@@ -316,7 +324,9 @@ class BaseOptions():
             args.lr = 0.005
             args.weight_decay = 5e-4
 
+        return self.prompt_mode_overwrite(args)
 
+    def prompt_mode_overwrite(self, args):
         if args.prompt_mode != "":
             #'{type_model}-{prompt_head}.{num_layer}-{prompt_layer}.{prompt-k}-{prompt-w-org-features}-{prompt-aggr}.{prompt_type}.{raw}-{contiual}')
             settings = args.prompt_mode.split('.')

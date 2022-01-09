@@ -5,15 +5,20 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score, average_precision_score
 from .generic_task import Learner
 
+
 class EdgeModelWrapper:
     def __init__(self, model, predictor):
         self.model = model
         self.predictor = predictor
+        self.training = True
 
     def __call__(self, x, edge_index, source, target):
         if not self._cache or self._cache_embs is None:
             self._cache_embs = self.model(x, edge_index)
-        return self.predictor(self._cache_embs[source], self._cache_embs[target])
+        if self.training:
+            return self.predictor(self._cache_embs[source], self._cache_embs[target]), self._cache_embs
+        else:
+            return self.predictor(self._cache_embs[source], self._cache_embs[target])
 
     def optimizers_zero_grad(self):
         self.model.optimizer.zero_grad()
@@ -27,18 +32,23 @@ class EdgeModelWrapper:
         self._cache = False
         self.model.train()
         self.predictor.train()
+        self.training = True
 
     def eval(self):
         self._cache = True
         self._cache_embs = None
         self.model.eval()
         self.predictor.eval()
+        self.training = False
+
 
 class EdgeLearner(Learner):
-    def __init__(self, model:EdgeModelWrapper, batch_size:int, data):
+    def __init__(self, model: EdgeModelWrapper, batch_size: int, data, temp):
         super().__init__(model, batch_size, data)
         assert isinstance(model, EdgeModelWrapper)
         self.loss_fn = torch.nn.BCEWithLogitsLoss()
+        self.loss_fn2 = torch.nn.CrossEntropyLoss()
+        self.temp = 1.0
 
     def task_train(self):
         self.model.train()
@@ -47,22 +57,26 @@ class EdgeLearner(Learner):
         device = self.data.x.device
         if self.batch_size > 0:
             for perm in DataLoader(range(data.train_pos.size(1)), self.batch_size, shuffle=True):
-
-                pos_prediction = self.model(data.x, data.edge_index, data.train_pos[0, perm], data.train_pos[1, perm])
-                neg_prediction = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
+                pos_prediction,  embs = self.model(data.x, data.edge_index, data.train_pos[0, perm], data.train_pos[1, perm])
+                neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
 
                 loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
                        self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
+                logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0],
+                                                    data.train_neg[1], self.temp)
+                loss = loss + self.loss_fn(logits, labels)
                 self.model.optimizers_zero_grad()
                 loss.backward()
                 self.model.optimizers_step()
                 loss_epoch.append(loss.item())
         else:
-            pos_prediction = self.model(data.x, data.edge_index, data.train_pos[0], data.train_pos[1])
-            neg_prediction = self.model(data.x, data.edge_index, data.train_neg[0], data.train_neg[1])
+            pos_prediction, embs = self.model(data.x, data.edge_index, data.train_pos[0], data.train_pos[1])
+            neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0], data.train_neg[1])
 
             loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
                    self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
+            logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0], data.train_neg[1], self.temp)
+            loss = loss + self.loss_fn(logits, labels)
             self.model.optimizers_zero_grad()
             loss.backward()
             self.model.optimizers_step()
@@ -119,6 +133,22 @@ class EdgeLearner(Learner):
         return {'valid_ap': val_ap, 'val_roc_auc': val_roc_auc,
                 'test_ap': test_ap, 'test_roc_auc': test_roc_auc}
 
+    def info_nce_loss(self, features, pos_src, pos_tgt, neg_src, neg_tgt, temp=1.0):
+
+        features = F.normalize(features, dim=1)
+
+        similarity_matrix = torch.matmul(features, features.T).fill_diagonal_(0)
+
+        positives = similarity_matrix[pos_src, pos_tgt]
+
+        negatives = similarity_matrix[neg_src, neg_tgt]
+
+        logits = torch.cat([positives, negatives], dim=0)
+        logits = logits / temp
+
+        labels = torch.cat([torch.ones_like(positives), torch.zeros_like(negatives)], dim=0)
+        return logits, labels
+
     @staticmethod
     def stats(best_stats, stats, bad_counter):
         if stats['val_roc_auc'] > best_stats['val_roc_auc']:
@@ -128,6 +158,8 @@ class EdgeLearner(Learner):
             bad_counter += 1
         return best_stats, bad_counter
 
-def create_edge_task(model, predictor, batch_size, data):
+
+def create_edge_task(model, predictor, batch_size, data, temp=1.0):
     wrap = EdgeModelWrapper(model, predictor)
-    return EdgeLearner(wrap, batch_size, data)
+    return EdgeLearner(wrap, batch_size, data, temp)
+

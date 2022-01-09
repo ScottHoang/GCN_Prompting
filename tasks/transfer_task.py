@@ -1,7 +1,9 @@
 import collections
 import random
 
-import utils
+import torch_geometric
+
+import utils as U
 from .edge_task import EdgeLearner
 from .node_task import NodeLearner
 from utils import TaskPredictor
@@ -10,6 +12,26 @@ from utils import CompoundOptimizers
 import torch_geometric.transforms as T
 from utils import MAD, shortest_path
 from torch.nn.functional import dropout
+import torch.nn as nn
+import torch.nn.functional as F
+class Att(nn.Module):
+    def __init__(self, num_nodes, in_c, nhead=8, num_encoder=6, batch_first=True, dropout=0.5, lr=1e-3):
+        super(Att, self).__init__()
+        layer = nn.TransformerEncoderLayer(in_c, nhead, dropout=dropout, batch_first=batch_first)
+        self.encoder = nn.TransformerEncoder(layer, num_encoder)
+        self.pe = nn.Parameter(torch.empty(num_nodes, 1, in_c), requires_grad=True)
+        self.init_weights()
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr, betas=[0.9, 0.98])
+
+    def init_weights(self):
+        nn.init.normal_(self.pe)
+
+    def forward(self, x):
+        x = x + self.pe
+        output = self.encoder(x)
+        return output.mean(dim=1)
+
+
 class TransNodeWrapper:
     def __init__(self, model, predictor, embeddings, args, task, data):
         for k, v in vars(args).items():
@@ -27,11 +49,20 @@ class TransNodeWrapper:
         self.stats = collections.defaultdict(list)
         self.index = self.cos_distance = None
 
+        if self.prompt_aggr == 'att':
+            in_c = self.embeddings.embs.size(1)
+            self.att_module = Att(self.data.x.size(0), in_c, self.att_head, self.att_num_layer, self.att_dropout, self.att_lr)
+            self.att_module.to(self.data.x.device)
+
         self.init_optimizer()
         self.training = True
 
     def init_optimizer(self):
-        self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer])
+        if self.prompt_aggr == 'att':
+            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer, self.att_module.optimizer], [self.embeddings.scheduler])
+        else:
+            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer], [self.embeddings.scheduler])
+
 
     def __call__(self, x, edge_index=None):
         if self.prompt_raw:
@@ -57,8 +88,7 @@ class TransNodeWrapper:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
             embs = self.build_prompt(embs, learnable_embs, prompt)
         if self.prompt_w_org_features:
-            embs = torch.cat([embs, x], dim=-1)
-
+            embs = torch.cat([embs,x], dim=-1)
         if self.is_mlp:
             return self.predictor(embs)
         else:
@@ -70,6 +100,8 @@ class TransNodeWrapper:
         self.predictor.train()
         self.model.eval()
         self.training = True
+        if hasattr(self, 'att_module'):
+            self.att_module.train()
 
     def eval(self):
         self._cache = True
@@ -77,19 +109,25 @@ class TransNodeWrapper:
         self.model.eval()
         self.predictor.eval()
         self.training = False
+        if hasattr(self, 'att_module'):
+            self.att_module.eval()
 
     def build_prompt(self, embs, prompt_embs, prompts_idx=None):
         prompts = prompt_embs[prompts_idx]
         pmode = self.prompt_aggr
-        if pmode == 'concat':
-            prompts = prompts.reshape(prompts.size(0), -1)
-        elif pmode == 'sum':
-            prompts = prompts.sum(dim=1)
-        elif pmode == 'mean':
-            prompts = prompts.mean(dim=1)
-        else:
-            raise ValueError
-        embs = torch.cat([embs, prompts], dim=-1)
+        if pmode in ['concat', 'sum', 'mean']:
+            if pmode == 'concat':
+                prompts = prompts.reshape(prompts.size(0), -1)
+            elif pmode == 'sum':
+                prompts = prompts.sum(dim=1)
+            elif pmode == 'mean':
+                prompts = prompts.mean(dim=1)
+            embs = torch.cat([embs, prompts], dim=-1)
+        elif pmode == 'att':
+
+            embs = torch.cat([embs.unsqueeze(dim=1), prompts], dim=1)
+            embs = self.att_module(embs)
+
         return embs
 
     def get_prompt(self, x_src, x_tgt, num_nodes, edge_index):
@@ -97,8 +135,9 @@ class TransNodeWrapper:
         return self.index
     
     def analyze_prompt(self, src, tgt, index):
-        if not self.prompt_continual or self.prompt_type == 'bfs':
-            if self.prompt_type == 'bfs':
+        if not self.prompt_continual or self.prompt_type in  ['bfs', 'random', 'ntxent', 'ntxent2',
+                                                              'ntxent3', 'exp']:
+            if self.prompt_type in ['bfs', 'random', 'ntxent', 'ntxent2', 'ntxent3', 'exp']:
                 self.cos_distance = MAD(src, torch.ones(src.size(0), src.size(0)).to(src.device),
                                         mean=False, emb_tgt=tgt)
             else:
@@ -141,6 +180,68 @@ class TransNodeWrapper:
         score = distance / cos_distance.sqrt().fill_diagonal_(-1)
         index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
         return index
+
+    def get_random_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        pop = [i for i in range(x_src.size(0))]
+        index = [random.sample(pop, self.prompt_k) for i in range(x_src.size(0))]
+        return torch.tensor(index)
+
+    def get_ntxent_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        distance = self.distance
+        distance[distance.eq(510)] = 1
+        temp = self.prompt_temp
+        x_tgt = x_tgt if x_tgt is not None else x_src
+        sim_num = torch.exp(U.pair_cosine_similarity(x_src, x_tgt).div(temp))
+        sim_denom = sim_num.clone().fill_diagonal_(0).sum(dim=1)
+        score = torch.log(sim_num.div(sim_denom.clamp(1e-8)).mul(distance))
+        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        return index
+
+    def get_ntxent2_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+        adj.fill_diagonal_(0)
+        temp = self.prompt_temp
+        x_tgt = x_tgt if x_tgt is not None else x_src
+        sim_num = torch.exp(U.pair_cosine_similarity(x_src, x_tgt).div(temp))
+        sim_denom = sim_num.clone().mul(adj).sum(dim=1)
+        sim_denom[sim_denom.eq(0)] = 1
+        score = torch.log(sim_num.div(sim_denom))
+        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        return index
+
+    def get_ntxent3_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        distance = self.distance
+        distance[distance.eq(510)] = 1
+        adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+        adj.fill_diagonal_(0)
+        temp = self.prompt_temp
+        x_tgt = x_tgt if x_tgt is not None else x_src
+        sim_num = torch.exp(U.pair_cosine_similarity(x_src, x_tgt).div(temp))
+        sim_denom = sim_num.clone().mul(adj).sum(dim=1)
+        sim_denom[sim_denom.eq(0)] = 1
+        score = torch.log(sim_num.div(sim_denom).mul(distance))
+        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        return index
+
+    def get_exp_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        distance = self.distance.clone()
+        distance[distance.eq(510)] = 1
+        distance = distance + 1
+        distance_row_norm = F.normalize(distance.float(), dim=-1)
+        distance_col_norm = F.normalize(distance.float(), dim=0)
+        distance = (distance_col_norm + distance_row_norm) / 2
+        #######
+        adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+        adj.fill_diagonal_(0)
+        #####
+        sim = U.pair_cosine_similarity(x_src, x_tgt)
+        mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
+        ######
+        score = torch.sigmoid(torch.exp(torch.abs(sim - mean_sim).div(self.prompt_temp)) * distance)
+        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        return index
+
+
 
     def get_bfs_prompts(self, x, x_tgt, num_nodes, edge_index):
         assert self.prompt_k > 0

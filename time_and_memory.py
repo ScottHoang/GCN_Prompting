@@ -60,7 +60,6 @@ class trainer(object):
         max_memory = max_memory_allocated(self.device)
 
         return time_per_epoch, num_params, max_memory
-    
 
     def run_trainSet(self):
         self.model.train()

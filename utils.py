@@ -119,9 +119,9 @@ class TaskPredictor(torch.nn.Module):
         return x
 
 class CompoundOptimizers():
-    def __init__(self, optimizers):
+    def __init__(self, optimizers, schedulers):
         self.optimizers = optimizers
-
+        self.schedulers = schedulers
     def zero_grad(self):
         for opt in self.optimizers:
             opt.zero_grad()
@@ -129,6 +129,8 @@ class CompoundOptimizers():
     def step(self):
         for opt in self.optimizers:
             opt.step()
+        for sch in self.schedulers:
+            sch.step()
 
 
 def floor(x):
@@ -619,24 +621,11 @@ def corrcoef(x):
 
 @torch.no_grad()
 def MAD(emb_src, mask=None, mean=True, emb_tgt=None):
-    n = emb_src.size(0)#
-    dij = []
-    if emb_tgt is None:
-        for i in range(n-1):
-            distance = 1 - torch.cosine_similarity(emb_src[i], emb_src[i::], dim=-1)
-            distance = F.pad(distance, (i,0))
-            dij.append(distance.unsqueeze(0))
-        dij.append(torch.zeros(1, mask.size(1)).to(mask.device))
-        dij = torch.cat(dij, dim=0)
-        dij = dij + dij.t()
-    else:
-        for i in range(n):
-            distance = 1 - torch.cosine_similarity(emb_src[i], emb_tgt, dim=-1)
-            dij.append(distance.unsqueeze(0))
-        dij = torch.cat(dij, dim=0)
+    emb_tgt = emb_tgt if emb_tgt is not None else emb_src
+    dij = 1 - pair_cosine_similarity(emb_src, emb_tgt)
     dtgt = torch.mul(dij, mask)
-    dtgt_norm = dtgt.sum(dim=-1) / mask.sum(dim=-1)
     if mean:
+        dtgt_norm = dtgt.sum(dim=-1) / mask.sum(dim=-1)
         return dtgt_norm.mean().item()
     else:
         return dtgt
@@ -661,6 +650,10 @@ def I2NR(edges, labels, hops=2):
     weighted_mean = mean_i2nr * missing_node_ratio
     return mean_i2nr, weighted_mean
 
+def pair_cosine_similarity(x, y, eps=1e-8):
+    n1 = x.norm(p=2, dim=1, keepdim=True)
+    n2 = y.norm(p=2, dim=1, keepdim=True)
+    return x / n1.clamp(min=eps) @ (y / n2.clamp(min=eps)).t()
 
 def shortest_path(num_nodes, edge_index):
     adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()

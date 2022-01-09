@@ -8,7 +8,9 @@ from options.base_options import BaseOptions
 from trainer import trainer
 from utils import set_seed, print_args, overwrite_with_yaml
 from collections import defaultdict
+import wandb
 
+args = None
 
 def main(args):
     overall_stats = defaultdict(list)
@@ -75,6 +77,27 @@ def save_prompt_embs(trnr, args, seed, stats):
     torch.save(pkgs, path)
 
 
+
+def sweep():
+
+    args.run_iters = 1
+    # exec(f'from config.sweep_files.{args.sweep_config} import parameters_dict as sweep_params')
+    sweep_config = {'method': 'grid'}
+    metric = {'name': 'test_loss_tune', 'goal': 'minimize'}
+    # metric = {'name': 'test_acc_tune' , 'goal': 'maximize'}
+    sweep_config['metric'] = metric
+    sweep_config['parameters'] = sweep_params
+    sweep_id = wandb.sweep(sweep_config,
+                           project=f'sweep-nas-gnn-{args.sweep_id}')
+    wandb.agent(sweep_id, function=run_sweep)
+
+def run_sweep():
+    with wandb.init(config=None):
+        main(args)
+        gc.collect()
+
+
 if __name__ == "__main__":
+    global args
     args = BaseOptions().initialize()
-    main(args)
+    sweep()

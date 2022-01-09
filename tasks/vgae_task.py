@@ -11,17 +11,24 @@ from .transfer_task import TransNodeWrapper
 from .node_task import NodeLearner
 
 class VGAELearner(Learner):
-    def __init__(self, model, batch_size, data):
+    def __init__(self, model, batch_size, data, temp=1.0):
         super(VGAELearner, self).__init__(model, batch_size, data)
         self.loss_fn = torch.nn.BCEWithLogitsLoss()
+        self.temp = 1.0
 
     def task_train(self):
+        data = self.data
         self.model.train()
         adj = self.get_target_adj(self.data.train_pos)
         norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
         pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
         pred, mu, logvar = self.model(self.data.x, self.data.train_pos)
         loss = loss_function(pred, adj, mu, logvar, self.data.x.size(0), norm ,pos_weight)
+
+        logits, labels = self.info_nce_loss(mu, data.train_pos[0], data.train_pos[1], data.train_neg[0],
+                                            data.train_neg[1], self.temp)
+        loss = loss + self.loss_fn(logits, labels)
+
         self.model.optimizer.zero_grad()
         loss.backward()
         self.model.optimizer.step()
@@ -64,6 +71,22 @@ class VGAELearner(Learner):
             bad_counter += 1
         return best_stats, bad_counter
 
+    def info_nce_loss(self, features, pos_src, pos_tgt, neg_src, neg_tgt, temp=1.0):
+
+        features = F.normalize(features, dim=1)
+
+        similarity_matrix = torch.matmul(features, features.T).fill_diagonal_(0)
+
+        positives = similarity_matrix[pos_src, pos_tgt]
+
+        negatives = similarity_matrix[neg_src, neg_tgt]
+
+        logits = torch.cat([positives, negatives], dim=0)
+        logits = logits / temp
+
+        labels = torch.cat([torch.ones_like(positives), torch.zeros_like(negatives)], dim=0)
+        return logits, labels
+
 class VGAENodeWrapper(TransNodeWrapper):
     def __init__(self, *args, **kwargs):
         super(VGAENodeWrapper, self).__init__(*args, **kwargs)
@@ -105,8 +128,8 @@ def loss_function(preds, labels, mu, logvar, n_nodes, norm, pos_weight):
     return cost + KLD
 
 
-def create_vgae_task(model, batch_size, data):
-    return VGAELearner(model, batch_size, data)
+def create_vgae_task(model, batch_size, data, temp):
+    return VGAELearner(model, batch_size, data, temp)
 
 # def create_vge_node_transfer_task(model, predictor, embeddings, task, prompt_mode, concat_mode, k_prompts, data, dataset,
 #                                   batch_size, type_trick, split_idx, prompt_type, prompt_raw, prompt_continual, **kwargs):
