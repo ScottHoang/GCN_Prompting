@@ -136,8 +136,8 @@ class TransNodeWrapper:
     
     def analyze_prompt(self, src, tgt, index):
         if not self.prompt_continual or self.prompt_type in  ['bfs', 'random', 'ntxent', 'ntxent2',
-                                                              'ntxent3', 'exp']:
-            if self.prompt_type in ['bfs', 'random', 'ntxent', 'ntxent2', 'ntxent3', 'exp']:
+                                                              'ntxent3', 'exp', 'micmap', 'macmip', 'micmip', 'rubberband']:
+            if self.prompt_type in ['bfs', 'random', 'ntxent', 'ntxent2', 'ntxent3', 'exp', 'expv2', 'micmap', 'macmip', 'micmip', 'rubberband']:
                 self.cos_distance = MAD(src, torch.ones(src.size(0), src.size(0)).to(src.device),
                                         mean=False, emb_tgt=tgt)
             else:
@@ -178,7 +178,7 @@ class TransNodeWrapper:
         distance[distance.eq(510)] = -1
         distance[distance.eq(-1)] = distance.max() + 1
         score = distance / cos_distance.sqrt().fill_diagonal_(-1)
-        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
     def get_random_prompts(self, x_src, x_tgt, num_nodes, edge_index):
@@ -220,13 +220,15 @@ class TransNodeWrapper:
         sim_denom = sim_num.clone().mul(adj).sum(dim=1)
         sim_denom[sim_denom.eq(0)] = 1
         score = torch.log(sim_num.div(sim_denom).mul(distance))
-        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
     def get_exp_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         distance = self.distance.clone()
         distance[distance.eq(510)] = 1
         distance = distance + 1
+        # if self.prompt_neighbor_cutoff > 0:
+        #     distance[distance.eq(self.prompt_neighbor_cutoff)] = 1
         distance_row_norm = F.normalize(distance.float(), dim=-1)
         distance_col_norm = F.normalize(distance.float(), dim=0)
         distance = (distance_col_norm + distance_row_norm) / 2
@@ -238,10 +240,55 @@ class TransNodeWrapper:
         mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
         ######
         score = torch.sigmoid(torch.exp(torch.abs(sim - mean_sim).div(self.prompt_temp)) * distance)
-        index = score.topk(self.prompt_k, dim=-1)[1].squeeze()
+        index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
+    def get_micmap_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
+        #d#####
+        score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
+        index = score.topk(self.prompt_k, dim=-1)[1]
+        return index
 
+    def get_macmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
+        #d#####
+        score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
+        index = score.topk(self.prompt_k, dim=-1)[1]
+        return index
+    def get_micmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
+        #d#####
+        score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
+        index = score.topk(self.prompt_k, dim=-1)[1]
+        return index
+
+    def get_rubberband_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
+        #d#####
+        score1 = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
+        score2 = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
+        score = score1 + score2
+        index = score.topk(self.prompt_k, dim=-1)[1]
+        return index
+
+    def _prep_micmapmacmip(self, x_src, x_tgt, num_nodes, edge_index):
+        distance = self.distance.clone()
+        if self.prompt_neighbor_cutoff > 0:
+            distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
+        else:
+            distance[distance.eq(510)] = 1
+        distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+        distance.fill_diagonal_(1)  # log(diag) = 0
+        distance = (distance + distance.t()) / 2
+        log_distance = torch.log(distance / self.prompt_distance_temp)
+        #######
+        adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+        adj.fill_diagonal_(0)
+        #####
+        sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
+        mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
+        return log_distance, sim ,mean_sim
 
     def get_bfs_prompts(self, x, x_tgt, num_nodes, edge_index):
         assert self.prompt_k > 0

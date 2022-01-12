@@ -1,3 +1,4 @@
+import copy
 import gc
 import os
 
@@ -9,19 +10,16 @@ from trainer import trainer
 from utils import set_seed, print_args, overwrite_with_yaml
 from collections import defaultdict
 import wandb
+from sweep_config.sweep_params import parameters_dict
 
-args = None
-
+global args
 def main(args):
     overall_stats = defaultdict(list)
     if not os.path.isdir('embeddings'):
         os.mkdir('embeddings')
-    # list_test_acc = []
-    # list_valid_acc = []
-    # list_train_loss = []
     if args.compare_model:
         args = overwrite_with_yaml(args, args.type_model, args.dataset)
-    print_args(args)
+    # print_args(args)
     for seed in range(args.N_exp):
         print(f'seed (which_run) = <{seed}>')
         args.random_seed = seed
@@ -29,11 +27,6 @@ def main(args):
         torch.cuda.empty_cache()
         trnr = trainer(args, seed)
         stats = trnr.train_and_test()
-        if args.prompt_save_embs:
-            # pkgs.update({
-            # 'labels': trnr.data.y,
-            # 'edge_index': trnr.data.edge_index})
-            save_prompt_embs(trnr, args, seed, stats)
         for k, v in stats.items():
             overall_stats[k].append(v)
 
@@ -47,53 +40,29 @@ def main(args):
             msg = msg + f"{k}: {np.mean(v):.4f}:{np.std(v):.4f}, "
         print(msg)
 
-    msg = f'final mean and std of test acc with <{args.N_exp}> runs:'
+    mean_stats = {}
     for k, v in overall_stats.items():
-        msg = msg + f"{k}: {np.mean(v):.4f}:{np.std(v):.4f}, "
-    print(msg)
-    return overall_stats
-
-def save_prompt_embs(trnr, args, seed, stats):
-    assert args.task not in ['node', 'edge']
-    name = f'{trnr.dataset}_{args.task}_{args.prompt_head}_{args.num_layers}_{args.prompt_layer}'
-    if args.prompt_w_org_features:
-        name = name + "_org"
-    name = name + '.pth'
-    path = os.path.join('embeddings', name)
-    pkg = {"static_embs": trnr.prompt_embs.static_embs,
-           "learned_embs": trnr.prompt_embs.embs,
-           'train_edges': trnr.data.train_pos,
-           'val_edges': trnr.data.val_pos,
-           'test_edges': trnr.data.test_pos,
-           'prompt': trnr.bfs_prompts}
-    pkg.update(stats)
-    if os.path.isdir(path):
-        pkgs = torch.load(path)
-    else:
-        pkgs = {
-            'labels': trnr.data.y,
-            'edge_index': trnr.data.edge_index}
-    pkgs[seed] = pkg
-    torch.save(pkgs, path)
-
+        mean_stats[k] = np.mean(v)
+    return mean_stats
 
 
 def sweep():
-
-    args.run_iters = 1
-    # exec(f'from config.sweep_files.{args.sweep_config} import parameters_dict as sweep_params')
-    sweep_config = {'method': 'grid'}
-    metric = {'name': 'test_loss_tune', 'goal': 'minimize'}
-    # metric = {'name': 'test_acc_tune' , 'goal': 'maximize'}
+    sweep_config = {'method': 'bayes'}
+    metric = {'name': 'test_acc', 'goal': 'maximize'}
     sweep_config['metric'] = metric
-    sweep_config['parameters'] = sweep_params
+    sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config,
-                           project=f'sweep-nas-gnn-{args.sweep_id}')
+                           project=f'sweep-{args.dataset}-3')
     wandb.agent(sweep_id, function=run_sweep)
 
 def run_sweep():
+    global args
     with wandb.init(config=None):
-        main(args)
+        local_args = copy.deepcopy(args)
+        for k, v in wandb.config.items():
+            setattr(local_args, k, v)
+        stats = main(local_args)
+        wandb.log(stats)
         gc.collect()
 
 

@@ -33,7 +33,7 @@ class BaseOptions():
                             choices=['concat', 'maxpool', 'attention', 'mean'],
                             help='aggregation function for skip connections')
 
-        parser.add_argument('--num_layers', type=int, default=64)
+        parser.add_argument('--num_layers', type=int, default=2)
         parser.add_argument("--epochs", type=int, default=1000,
                             help="number of training the one shot model")
         parser.add_argument('--patience', type=int, default=100,
@@ -54,7 +54,7 @@ class BaseOptions():
         parser.add_argument('--activation', type=str, default="relu", required=False)
 
         # task [node, edge, prompt]
-        parser.add_argument('--task', type=str, default='node')
+        parser.add_argument('--task', type=str, default='dt')
         # edge task specific parameters for data prep
         parser.add_argument('--use-splitted', action='store_true',
                             help='use the pre-splitted train/test data,\
@@ -80,9 +80,11 @@ class BaseOptions():
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
         parser.add_argument('--prompt-k', type=int, default=5)
+        parser.add_argument('--prompt-neighbor-cutoff', type=int, default=-1)
         parser.add_argument('--prompt-raw', action='store_true')
         parser.add_argument('--prompt-continual', action='store_true')
         parser.add_argument('--prompt-temp', type=float, default=1.0)
+        parser.add_argument('--prompt-distance-temp', type=float, default=1.0)
         parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
@@ -352,4 +354,5 @@ class BaseOptions():
             raw, continual = settings[4].split('-')
             args.prompt_raw = raw == 'r'
             args.prompt_continual = continual == 'c'
-            return args
+        return args
+
