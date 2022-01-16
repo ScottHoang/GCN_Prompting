@@ -147,7 +147,7 @@ class trainer(object):
         if self.args.task in ['node', 'edge']:
             self.set_dataloader()
             if self.args.task == 'node':
-                learner = create_node_task(self.model, self.args.batch_size, self.data, self.dataset, self.type_trick,
+                learner = create_node_task(self.args, self.model, self.args.batch_size, self.data, self.dataset, self.type_trick,
                                            self.split_idx)
             else:
                 learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)

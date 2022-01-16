@@ -57,26 +57,28 @@ class EdgeLearner(Learner):
         device = self.data.x.device
         if self.batch_size > 0:
             for perm in DataLoader(range(data.train_pos.size(1)), self.batch_size, shuffle=True):
-                pos_prediction,  embs = self.model(data.x, data.edge_index, data.train_pos[0, perm], data.train_pos[1, perm])
-                neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
+                pos_prediction,  embs = self.model(data.x, data.train_pos, data.train_pos[0, perm], data.train_pos[1, perm])
+                # neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0, perm], data.train_neg[1, perm])
 
-                loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
-                       self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
-                logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0],
-                                                    data.train_neg[1], self.temp)
-                loss = loss + self.loss_fn(logits, labels)
+                loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device))
+                # + \
+                       # self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
+                # logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0],
+                #                                     data.train_neg[1], self.temp)
+                # loss = loss + self.loss_fn(logits, labels)
                 self.model.optimizers_zero_grad()
                 loss.backward()
                 self.model.optimizers_step()
                 loss_epoch.append(loss.item())
         else:
-            pos_prediction, embs = self.model(data.x, data.edge_index, data.train_pos[0], data.train_pos[1])
-            neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0], data.train_neg[1])
+            pos_prediction, embs = self.model(data.x, data.train_pos, data.train_pos[0], data.train_pos[1])
+            # neg_prediction, _ = self.model(data.x, data.edge_index, data.train_neg[0], data.train_neg[1])
 
-            loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device)) + \
-                   self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
-            logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0], data.train_neg[1], self.temp)
-            loss = loss + self.loss_fn(logits, labels)
+            loss = self.loss_fn(pos_prediction, torch.ones(pos_prediction.shape).to(device))
+            # + \
+                   # self.loss_fn(neg_prediction, torch.zeros(neg_prediction.shape).to(device))
+            # logits, labels = self.info_nce_loss(embs, data.train_pos[0], data.train_pos[1], data.train_neg[0], data.train_neg[1], self.temp)
+            # loss = loss + self.loss_fn(logits, labels)
             self.model.optimizers_zero_grad()
             loss.backward()
             self.model.optimizers_step()

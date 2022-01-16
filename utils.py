@@ -100,6 +100,7 @@ class TaskPredictor(torch.nn.Module):
 
         self.dropout = dropout
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda= lambda epoch: 0.95, )
 
     def reset_parameters(self):
         for lin in self.lins:
@@ -659,3 +660,4 @@ def shortest_path(num_nodes, edge_index):
     adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()
     distance, path = algos.floyd_warshall(adj)
     return torch.tensor(distance).to(edge_index.device)
+

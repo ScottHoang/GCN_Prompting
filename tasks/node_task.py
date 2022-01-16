@@ -1,3 +1,6 @@
+import os
+from datetime import datetime
+
 import torch
 import torch.nn
 import torch.nn.functional as F
@@ -14,17 +17,29 @@ def evaluate(output, labels, mask):
     return correct.item() * 1.0 / mask.sum().item()
 
 class NodeLearner(Learner):
-    def __init__(self, model, batch_size: int, data, dataset, type_trick, split_idx=None):
+    def __init__(self, args, model, batch_size: int, data, dataset, type_trick, split_idx=None):
         super().__init__(model, batch_size, data)
+        for k, v in vars(args).items():
+            setattr(self, k, v)
         self.loss_fn = F.nll_loss
         self.split_idx = split_idx
         self.dataset = dataset
         self.type_trick = type_trick
+        self.count = 0
         if dataset =='ogbn':
             self.evaluator = Evaluator(name='ogbn-arxiv')
             self.train_idx = self.split_idx['train'].to(self.data.x.device)
         else:
             self.evaluator = None
+        if self.prompt_save_embs:
+            self.root = root = os.path.join('embeddings', self.prompt_mode, self.dataset,
+                                            datetime.now().strftime('%y-%m-%d||%H:%M')
+                                            )
+            self.count = 0
+            if not os.path.isdir(root):
+                os.makedirs(root)
+
+
 
     def task_train(self):
         self.model.train()
@@ -41,13 +56,13 @@ class NodeLearner(Learner):
             if AcontainsB(self.type_trick, ['LabelSmoothing']):
                 smooth_loss = -raw_logits[self.data.train_mask].mean(dim=-1).mean()
                 loss = 0.97 * loss + 0.03 * smooth_loss
-
         self.model.optimizer.zero_grad()
         loss.backward()
         self.model.optimizer.step()
 
         return {'train_loss': loss.item()}
 
+    @torch.no_grad()
     def task_test(self):
         self.model.eval()
         # torch.cuda.empty_cache()
@@ -78,8 +93,18 @@ class NodeLearner(Learner):
             acc_val = evaluate(logits, self.data.y, self.data.val_mask)
             acc_test = evaluate(logits, self.data.y, self.data.test_mask)
             val_loss = self.loss_fn(logits[self.data.val_mask], self.data.y[self.data.val_mask])
-            return {'train_acc': acc_train, 'valid_acc': acc_val,
+            results = {'train_acc': acc_train, 'valid_acc': acc_val,
                     'test_acc': acc_test, "val_los": val_loss.item()}
+            if self.prompt_save_embs:
+                self.save_embs(self.model.node_embs, self.model.final_embs, self.model.prompt, results)
+            return results
+
+    def save_embs(self, node_embs, final_embs, prompts, results):
+        if self.count % 20 == 0:
+            torch.save({'node_embs': node_embs, 'final_embs': final_embs, 'prompts': prompts, 'labels': self.data.y,
+                        'edges': self.data.edge_index, 'lr': self.model.embeddings.optimizer.param_groups[0]['lr'], 'results': results},
+                       os.path.join(self.root, f'embeddings_{self.count}.pth.tar'))
+        self.count += 1
 
     def stats(self, best_stats, stats, bad_counter):
         if self.dataset != 'ogbn-arxiv':
@@ -97,5 +122,5 @@ class NodeLearner(Learner):
         return best_stats, bad_counter
 
 
-def create_node_task(model, batch_size, data, dataset, type_trick, split_idx=None):
-    return NodeLearner(model, batch_size, data, dataset, type_trick, split_idx)
+def create_node_task(args, model, batch_size, data, dataset, type_trick, split_idx=None):
+    return NodeLearner(args, model, batch_size, data, dataset, type_trick, split_idx)

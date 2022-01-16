@@ -1,4 +1,6 @@
 import collections
+import datetime
+import os
 import random
 
 import torch_geometric
@@ -56,25 +58,35 @@ class TransNodeWrapper:
 
         self.init_optimizer()
         self.training = True
+        # if self.prompt_save_embs:
+        #     self.root = root = os.path.join('embeddings', self.prompt_mode, self.dataset,
+        #                         datetime.datetime.now().strftime('%y-%m-%d||%H:%M')
+        #                         )
+        #     self.count = 0
+        #     if not os.path.isdir(root):
+        #         os.makedirs(root)
 
     def init_optimizer(self):
         if self.prompt_aggr == 'att':
-            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer, self.att_module.optimizer], [self.embeddings.scheduler])
+            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer,
+                                                 self.att_module.optimizer], [self.embeddings.scheduler])
         else:
-            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer], [self.embeddings.scheduler])
+            self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer],
+                                                [self.predictor.scheduler, self.embeddings.scheduler])
 
 
     def __call__(self, x, edge_index=None):
         if self.prompt_raw:
-            learnable_embs = self.embeddings.embs_raw
-            embs = self.embeddings.embs
+            prompt_embs = self.embeddings.embs_raw
+            self.node_embs = node_embs = self.embeddings.embs
             emb_tgt = None
-            emb_src = learnable_embs
+            emb_src = prompt_embs
         else:
-            learnable_embs = self.embeddings.embs
-            embs = self.embeddings.embs
-            emb_tgt = learnable_embs
-            emb_src = embs
+            prompt_embs = self.embeddings.embs
+            self.node_embs = node_embs = self.embeddings.embs
+            emb_tgt = prompt_embs
+            emb_src = node_embs
+        ############################################
         if self.prompt_k:
             if self.prompt_continual:
                 self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
@@ -83,16 +95,21 @@ class TransNodeWrapper:
                     self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
                 else:
                     prompt = self.prompt
-
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
-            embs = self.build_prompt(embs, learnable_embs, prompt)
-        if self.prompt_w_org_features:
-            embs = torch.cat([embs,x], dim=-1)
-        if self.is_mlp:
-            return self.predictor(embs)
+
+            self.prompted_embs = prompted_embs = self.build_prompt(node_embs, prompt_embs, prompt)
         else:
-            return self.predictor(embs, edge_index)
+            self.prompted_embs = prompted_embs = node_embs
+        ###############################################
+        if self.prompt_w_org_features:
+            self.final_embs = final_embs = torch.cat([prompted_embs,x], dim=-1)
+        else:
+            self.final_embs = final_embs = prompted_embs
+        if self.is_mlp:
+            return self.predictor(final_embs)
+        else:
+            return self.predictor(final_embs, edge_index)
 
 
     def train(self):
@@ -124,7 +141,6 @@ class TransNodeWrapper:
                 prompts = prompts.mean(dim=1)
             embs = torch.cat([embs, prompts], dim=-1)
         elif pmode == 'att':
-
             embs = torch.cat([embs.unsqueeze(dim=1), prompts], dim=1)
             embs = self.att_module(embs)
 
@@ -256,6 +272,7 @@ class TransNodeWrapper:
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
+
     def get_micmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
         #d#####
@@ -331,6 +348,13 @@ class TransNodeWrapper:
         for k ,v in stats:
             self.stats[k].append(v)
 
+    # def save_embs(self, node_embs, final_embs, prompts):
+    #     if self.count % 20 == 0:
+    #         torch.save({'node_embs': node_embs, 'final_embs': final_embs, 'prompts': prompts, 'labels': self.data.y,
+    #                     'edges': self.data.edge_index, 'lr': self.embeddings.optimizer.param_groups[0]['lr']},
+    #                    os.path.join(self.root, f'embeddings_{self.count}.pth.tar'))
+    #     self.count += 1
+
 def create_domain_transfer_task(model, predictor, embeddings, args, task, data, split_idx):
     wrap = TransNodeWrapper(model, predictor, embeddings, args, task, data)
-    return NodeLearner(wrap, args.batch_size, data, args.dataset, args.type_trick, split_idx)
+    return NodeLearner(args, wrap, args.batch_size, data, args.dataset, args.type_trick, split_idx)
