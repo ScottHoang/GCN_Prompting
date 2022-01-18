@@ -67,9 +67,9 @@ class Embeddings(nn.Module):
         self.embs = nn.Parameter(embs.clone(), requires_grad=True)
         self.embs_raw = nn.Parameter(raw.clone(), requires_grad=True)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=weight_decay)
-        # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=0.001 )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100, eta_min=0.0)
         # self.scheduler = LinearLR(self.optimizer, start_factor=0.5, total_iters=epochs)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda= lambda epoch: 0.95, )
+        # self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda= lambda epoch: 0.95, )
 
 
 class GradientStorage:

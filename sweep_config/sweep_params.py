@@ -1,8 +1,8 @@
 parameters_dict = {
     'prompt_k': {
-        'values' : [1, 5, 10, 15] },
+        'values' : [5, 10, 15] },
     'prompt_lr': {
-        'values': [5e-1, 1e-1, 5e-2, 1e-2]},
+        'values': [5e-1]},
     'lr': {
         'values': [5e-2, 1e-2, 5e-3, 1e-3]},
     'prompt_temp': {
@@ -10,7 +10,7 @@ parameters_dict = {
     'prompt_distance_temp': {
         'values': [0.1, 0.5, 1.0, 5, 10]},
     'prompt_neighbor_cutoff': {
-        'values': [-1, 1, 2, 3, 4]},
+        'values': [-1, 3]},
     'prompt_layer': {
         'values': [1, 2],
     },
@@ -33,7 +33,7 @@ parameters_dict = {
         'values': [False]
     },
     'prompt_type': {
-        'values': ['micmap', 'macmip', 'micmip']
+        'values': ['micmap']
     }
 
 

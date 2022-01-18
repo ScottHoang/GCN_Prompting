@@ -7,6 +7,9 @@ from sklearn.decomposition import  PCA
 import imageio
 import sys
 from tqdm import tqdm
+import random
+
+temp_root = f'images_{random.randint(0,100)}'
 
 colors = {
     0: 'coral',
@@ -38,7 +41,10 @@ def read_files(paths):
         embs = pca.fit_transform(embs)
         particles = tsne.fit_transform(embs).transpose()
         coordinates_lists.append(particles)
-        prompts.append(file['prompts'].cpu().numpy())
+        if file['prompts'] is not None:
+            prompts.append(file['prompts'].cpu().numpy())
+        else:
+            prompts.append(None)
         test_acc.append(file['results']['test_acc'])
         lr.append(file['lr'])
         if labels is None:
@@ -98,14 +104,15 @@ def generate_scatter_plots(labels, coordinates_lists, prompts, lr, test_acc, edg
             for src, tgt in edge_index.transpose():
                 plt.plot(x_temp[[src,tgt]], y_temp[[src,tgt]], linewidth=1, alpha=0.25, c='gainsboro')
             upscale = [1 for _ in range(x_temp.shape[0])]
-            for src, tgts in enumerate(prompt):
-                if tgts is None:
-                    break
-                else:
-                    for tgt in tgts:
-                        if src == tgt: continue
-                        else:
-                            upscale[tgt] += 1
+            if prompt is not None:
+                for src, tgts in enumerate(prompt):
+                    if tgts is None:
+                        break
+                    else:
+                        for tgt in tgts:
+                            if src == tgt: continue
+                            else:
+                                upscale[tgt] += 1
             scale = np.array([marker_size*2**np.log(n) for n in upscale])
             for g in np.unique(labels):
                 ix = np.where(labels==g)
@@ -122,7 +129,7 @@ def generate_scatter_plots(labels, coordinates_lists, prompts, lr, test_acc, edg
             ax.yaxis.grid(color='gray', linestyle='dashed', alpha=0.7)
             ax.xaxis.grid(color='gray', linestyle='dashed', alpha=0.7)
             # build file name and append to list of file names
-            filename = f'images/frame_{index}_{i}.png'
+            filename = f'{temp_root}/frame_{index}_{i}.png'
             filenames.append(filename)
             if (i == n_frames):
                 for i in range(5):
@@ -150,8 +157,8 @@ def create_gif(filenames, gif_name):
 if __name__ == "__main__":
     _, dst, dataset = sys.argv
     root = 'embeddings'
-    if not os.path.isdir('images'):
-        os.makedirs('images')
+    if not os.path.isdir(temp_root):
+        os.makedirs(temp_root)
     if not os.path.isdir(dst):
         os.makedirs(dst)
     totalpaths = []
@@ -169,4 +176,4 @@ if __name__ == "__main__":
         filenames = generate_scatter_plots(labels, coordinates, prompts, lrs, test_acc, edge_index)
         create_gif(filenames, gif_name)
 
-    os.rmdir('images')
+    os.rmdir(temp_root)

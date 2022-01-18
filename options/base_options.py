@@ -245,7 +245,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.6
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9
@@ -263,7 +263,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.6
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9
@@ -279,7 +279,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9
@@ -295,7 +295,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9

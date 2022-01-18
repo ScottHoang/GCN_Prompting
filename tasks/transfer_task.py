@@ -71,8 +71,11 @@ class TransNodeWrapper:
             self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer,
                                                  self.att_module.optimizer], [self.embeddings.scheduler])
         else:
+            schedulers = [self.embeddings.scheduler]
+            if hasattr(self.predictor, 'scheduler'):
+                schedulers.append(self.predictor.scheduler)
             self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer],
-                                                [self.predictor.scheduler, self.embeddings.scheduler])
+                                                schedulers)
 
 
     def __call__(self, x, edge_index=None):
@@ -82,10 +85,7 @@ class TransNodeWrapper:
             emb_tgt = None
             emb_src = prompt_embs
         else:
-            prompt_embs = self.embeddings.embs
-            self.node_embs = node_embs = self.embeddings.embs
-            emb_tgt = prompt_embs
-            emb_src = node_embs
+            self.node_embs = emb_src = emb_tgt = self.embeddings.embs
         ############################################
         if self.prompt_k:
             if self.prompt_continual:
@@ -98,9 +98,9 @@ class TransNodeWrapper:
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
 
-            self.prompted_embs = prompted_embs = self.build_prompt(node_embs, prompt_embs, prompt)
+            self.prompted_embs = prompted_embs = self.build_prompt(emb_src, emb_tgt, prompt)
         else:
-            self.prompted_embs = prompted_embs = node_embs
+            self.prompted_embs = prompted_embs = emb_src
         ###############################################
         if self.prompt_w_org_features:
             self.final_embs = final_embs = torch.cat([prompted_embs,x], dim=-1)

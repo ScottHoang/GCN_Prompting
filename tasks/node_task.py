@@ -59,6 +59,7 @@ class NodeLearner(Learner):
         self.model.optimizer.zero_grad()
         loss.backward()
         self.model.optimizer.step()
+        # print(self.model.embeddings.optimizer.param_groups[0]['lr'])
 
         return {'train_loss': loss.item()}
 

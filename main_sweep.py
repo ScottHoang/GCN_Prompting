@@ -52,7 +52,7 @@ def sweep():
     sweep_config['metric'] = metric
     sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config,
-                           project=f'sweep-{args.dataset}-3')
+                           project=f'sweep-{args.dataset}-5')
     wandb.agent(sweep_id, function=run_sweep)
 
 def run_sweep():

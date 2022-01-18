@@ -25,8 +25,7 @@ class VGAELearner(Learner):
         pred, mu, logvar = self.model(self.data.x, self.data.train_pos)
         loss = loss_function(pred, adj, mu, logvar, self.data.x.size(0), norm ,pos_weight)
 
-        logits, labels = self.info_nce_loss(mu, data.train_pos[0], data.train_pos[1], data.train_neg[0],
-                                            data.train_neg[1], self.temp)
+        logits, labels = self.info_nce_loss(mu, data.train_pos[0], data.train_pos[1], data.train_neg[0],  data.train_neg[1], self.temp)
         loss = loss + self.loss_fn(logits, labels)
 
         self.model.optimizer.zero_grad()
