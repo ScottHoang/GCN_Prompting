@@ -93,9 +93,11 @@ class TaskPredictor(torch.nn.Module):
         self.lins = torch.nn.ModuleList()
         # self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
         _inc = in_channels
+        hidden_channels = in_channels
         for _ in range(num_layers-1):
             self.lins.append(torch.nn.Linear(_inc, hidden_channels))
             _inc = hidden_channels
+            # hidden_channels //=2
         self.lins.append(torch.nn.Linear(_inc, out_channels))
 
         self.dropout = dropout
@@ -179,13 +181,16 @@ def split_edges(data, args):
 
         row, col = neg_row[:n_v], neg_col[:n_v]
         data.val_neg_edge_index = torch.stack([row, col], dim=0)
+        neg_adj_mask[row, col] = 0
 
         row, col = neg_row[n_v:n_v + n_t], neg_col[n_v:n_v + n_t]
         data.test_neg_edge_index = torch.stack([row, col], dim=0)
+        neg_adj_mask[row, col] = 0
 
         row, col = neg_row[n_v + n_t:], neg_col[n_v + n_t:]
-        data.train_neg = torch.stack([row, col], dim=0)
-
+        data.train_neg_edge_index = torch.stack([row, col], dim=0)
+        # do not aware of no edges in val and test
+        data.train_neg_adj_mask = neg_adj_mask
     else:
         neg_adj_mask = torch.ones(data.num_nodes, data.num_nodes, dtype=torch.uint8)
         neg_adj_mask = neg_adj_mask.triu(diagonal=1).to(torch.bool)
@@ -195,11 +200,11 @@ def split_edges(data, args):
         neg_row, neg_col = neg_adj_mask.nonzero(as_tuple=False).t()
         perm = torch.randperm(neg_row.size(0))[:n_t]
         neg_row, neg_col = neg_row[perm], neg_col[perm]
-        data.test_neg = torch.stack([neg_row, neg_col], dim=0)
+        data.test_neg_edge_index = torch.stack([neg_row, neg_col], dim=0)
 
         # Sample the train and val negative edges with only knowing
         # the train positive edges
-        row, col = data.train_pos
+        row, col = data.train_pos_edge_index
         neg_adj_mask = torch.ones(data.num_nodes, data.num_nodes, dtype=torch.uint8)
         neg_adj_mask = neg_adj_mask.triu(diagonal=1).to(torch.bool)
         neg_adj_mask[row, col] = 0
@@ -207,15 +212,15 @@ def split_edges(data, args):
         # Sample the train and validation negative edges
         neg_row, neg_col = neg_adj_mask.nonzero(as_tuple=False).t()
 
-        n_tot = n_v + data.train_pos.size(1)
+        n_tot = n_v + data.train_pos_edge_index_edge_index.size(1)
         perm = torch.randperm(neg_row.size(0))[:n_tot]
         neg_row, neg_col = neg_row[perm], neg_col[perm]
 
         row, col = neg_row[:n_v], neg_col[:n_v]
-        data.val_neg = torch.stack([row, col], dim=0)
+        data.val_neg_edge_index = torch.stack([row, col], dim=0)
 
         row, col = neg_row[n_v:], neg_col[n_v:]
-        data.train_neg = torch.stack([row, col], dim=0)
+        data.train_neg_edge_index = torch.stack([row, col], dim=0)
 
     return data
 
@@ -332,64 +337,64 @@ def minus_edge(data_observed, label, p_edge, args):
     return data
 
 
-def load_splitted_data(args):
-    par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    data_name = args.dataset + '_split_' + args.data_split_num
-    if args.test_ratio == 0.5:
-        data_dir = os.path.join(par_dir, 'data/splitted_0_5/{}.mat'.format(data_name))
-    else:
-        data_dir = os.path.join(par_dir, 'data/splitted/{}.mat'.format(data_name))
-    import scipy.io as sio
-    print('Load data from: ' + data_dir)
-    net = sio.loadmat(data_dir)
-    data = Data()
+# def load_splitted_data(args):
+#     par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+#     data_name = args.dataset + '_split_' + args.data_split_num
+#     if args.test_ratio == 0.5:
+#         data_dir = os.path.join(par_dir, 'data/splitted_0_5/{}.mat'.format(data_name))
+#     else:
+#         data_dir = os.path.join(par_dir, 'data/splitted/{}.mat'.format(data_name))
+#     import scipy.io as sio
+#     print('Load data from: ' + data_dir)
+#     net = sio.loadmat(data_dir)
+#     data = Data()
+#
+#     data.train_pos_edge_index = torch.from_numpy(np.int64(net['train_pos_edge_index']))
+#     data.train_neg_edge_index = torch.from_numpy(np.int64(net['train_neg_edge_index']))
+#     data.test_pos_edge_index = torch.from_numpy(np.int64(net['test_pos_edge_index']))
+#     data.test_neg_edge_index = torch.from_numpy(np.int64(net['test_neg_edge_index']))
+#
+#     n_pos = floor(args.val_ratio * len(data.train_pos_edge_index)).int()
+#     nlist = np.arange(len(data.train_pos_edge_index))
+#     np.random.shuffle(nlist)
+#     val_pos_edge_index_list = nlist[:n_pos]
+#     train_pos_edge_index_list = nlist[n_pos:]
+#     data.val_pos_edge_index = data.train_pos_edge_index[val_pos_edge_index_list]
+#     data.train_pos_edge_index = data.train_pos_edge_index[train_pos_edge_index_list]
+#
+#     n_neg = floor(args.val_ratio * len(data.train_neg_edge_index)).int()
+#     nlist = np.arange(len(data.train_neg_edge_index))
+#     np.random.shuffle(nlist)
+#     val_neg_edge_index_list = nlist[:n_neg]
+#     train_neg_edge_index_list = nlist[n_neg:]
+#     data.val_neg_edge_index = data.train_neg_edge_index[val_neg_edge_index_list]
+#     data.train_neg_edge_index = data.train_neg_edge_index[train_neg_edge_index_list]
+#
+#     data.val_pos_edge_index = torch.transpose(data.val_pos_edge_index, 0, 1)
+#     data.val_neg_edge_index = torch.transpose(data.val_neg_edge_index, 0, 1)
+#     data.train_pos_edge_index = torch.transpose(data.train_pos_edge_index, 0, 1)
+#     data.train_neg_edge_index = torch.transpose(data.train_neg_edge_index, 0, 1)
+#     data.test_pos_edge_index = torch.transpose(data.test_pos_edge_index_edge_index, 0, 1)
+#     data.test_neg_edge_index = torch.transpose(data.test_neg_edge_index, 0, 1)
+#     num_nodes = max(torch.max(data.train_pos_edge_index), torch.max(data.test_pos_edge_index_edge_index)) + 1
+#     num_nodes = max(num_nodes, torch.max(data.val_pos_edge_index) + 1)
+#     data.num_nodes = num_nodes
+#
+#     return data
 
-    data.train_pos = torch.from_numpy(np.int64(net['train_pos']))
-    data.train_neg = torch.from_numpy(np.int64(net['train_neg']))
-    data.test_pos = torch.from_numpy(np.int64(net['test_pos']))
-    data.test_neg = torch.from_numpy(np.int64(net['test_neg']))
 
-    n_pos = floor(args.val_ratio * len(data.train_pos)).int()
-    nlist = np.arange(len(data.train_pos))
-    np.random.shuffle(nlist)
-    val_pos_list = nlist[:n_pos]
-    train_pos_list = nlist[n_pos:]
-    data.val_pos = data.train_pos[val_pos_list]
-    data.train_pos = data.train_pos[train_pos_list]
-
-    n_neg = floor(args.val_ratio * len(data.train_neg)).int()
-    nlist = np.arange(len(data.train_neg))
-    np.random.shuffle(nlist)
-    val_neg_list = nlist[:n_neg]
-    train_neg_list = nlist[n_neg:]
-    data.val_neg = data.train_neg[val_neg_list]
-    data.train_neg = data.train_neg[train_neg_list]
-
-    data.val_pos = torch.transpose(data.val_pos, 0, 1)
-    data.val_neg = torch.transpose(data.val_neg, 0, 1)
-    data.train_pos = torch.transpose(data.train_pos, 0, 1)
-    data.train_neg = torch.transpose(data.train_neg, 0, 1)
-    data.test_pos = torch.transpose(data.test_pos, 0, 1)
-    data.test_neg = torch.transpose(data.test_neg, 0, 1)
-    num_nodes = max(torch.max(data.train_pos), torch.max(data.test_pos)) + 1
-    num_nodes = max(num_nodes, torch.max(data.val_pos) + 1)
-    data.num_nodes = num_nodes
-
-    return data
-
-
-def load_unsplitted_data(args):
-    # read .mat format files
-    data_dir = os.path.join(par_dir, 'data/{}.mat'.format(args.dataset))
-    print('Load data from: ' + data_dir)
-    import scipy.io as sio
-    net = sio.loadmat(data_dir)
-    edge_index, _ = from_scipy_sparse_matrix(net['net'])
-    data = Data(edge_index=edge_index)
-    if is_undirected(data.edge_index) == False:  # in case the dataset is directed
-        data.edge_index = to_undirected(data.edge_index)
-    data.num_nodes = torch.max(data.edge_index) + 1
-    return data
+# def load_unsplitted_data(args):
+#     # read .mat format files
+#     data_dir = os.path.join(par_dir, 'data/{}.mat'.format(args.dataset))
+#     print('Load data from: ' + data_dir)
+#     import scipy.io as sio
+#     net = sio.loadmat(data_dir)
+#     edge_index, _ = from_scipy_sparse_matrix(net['net'])
+#     data = Data(edge_index=edge_index)
+#     if is_undirected(data.edge_index) == False:  # in case the dataset is directed
+#         data.edge_index = to_undirected(data.edge_index)
+#     data.num_nodes = torch.max(data.edge_index) + 1
+#     return data
 
 
 def load_Planetoid_data(args):
@@ -441,11 +446,11 @@ def load_Planetoid_data(args):
 
 def set_init_attribute_representation(data, args):
     # Construct data_observed and compute its node attributes & representation
-    edge_index = torch.cat((data.train_pos, data.train_pos[[1, 0], :]), dim=1)
+    edge_index = torch.cat((data.train_pos_edge_index, data.train_pos_edge_index[[1, 0], :]), dim=1)
     if args.observe_val_and_injection == False:
         data_observed = Data(edge_index=edge_index)
     else:
-        edge_index = torch.cat((edge_index, data.val_pos, data.val_pos[[1, 0], :]), dim=1)
+        edge_index = torch.cat((edge_index, data.val_pos_edge_index, data.val_pos_edge_index[[1, 0], :]), dim=1)
         data_observed = Data(edge_index=edge_index)
     data_observed.num_nodes = data.num_nodes
     if args.observe_val_and_injection == False:
@@ -453,8 +458,8 @@ def set_init_attribute_representation(data, args):
     else:
         # use the injection trick and add val data in observed graph
         edge_index_observed = torch.cat((data_observed.edge_index, \
-                                         data.train_neg, data.train_neg[[1, 0], :], data.val_neg,
-                                         data.val_neg[[1, 0], :]), dim=1)
+                                         data.train_neg_edge_index, data.train_neg_edge_index[[1, 0], :], data.val_neg_edge_index,
+                                         data.val_neg_edge_index[[1, 0], :]), dim=1)
     # generate the initial node attribute if there isn't any
     if data.x == None:
         if args.init_attribute == 'n2v':
@@ -477,7 +482,7 @@ def set_init_attribute_representation(data, args):
         x = data.x
     # generate the initial node representation using unsupervised models
     # if args.init_representation != None:
-    #     val_and_test = [data.test_pos, data.test_neg, data.val_pos, data.val_neg]
+    #     val_and_test = [data.test_pos_edge_index_edge_index, data.test_neg_edge_index, data.val_pos_edge_index, data.val_neg_edge_index]
     #     num_nodes, _ = x.shape
     #     # add self-loop for the last node to aviod losing node if the last node dosen't have a link.
     #     if (num_nodes - 1) in edge_index_observed:

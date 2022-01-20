@@ -80,23 +80,22 @@ class PretrainLearner(Learner):
         loss_epoch = []
         loss = []
         data = self.data
-        masked_edges, train_pos_edge_index, train_neg_edge_index = sampling_edges(data.train_pos_edge_index, data.train_neg_adj_mask)
+        # masked_edges, train_pos_edge_index, train_neg_edge_index = sampling_edges(data.train_pos_edge_index, data.train_neg_adj_mask)
+
         if utils.AcontainsB(self.prompt_pretrain_type, ['edgeMask']):
-            pos_prediction = self.model.forward_edge(data.x, masked_edges, train_pos_edge_index[0], train_pos_edge_index[1])
-            neg_prediction = self.model.forward_edge(data.x, masked_edges, train_neg_edge_index[0], train_neg_edge_index[1])
-            loss_edges = self.loss_fn(pos_prediction, torch.ones_like(pos_prediction)) + self.loss_fn(neg_prediction, torch.zeros_like(neg_prediction))
+            pos_prediction = self.model.forward_edge(data.x, data.edge_index, data.train_pos_edge_index[0], data.train_pos_edge_index[1])
+            loss_edges = self.loss_fn(pos_prediction, torch.ones_like(pos_prediction))
             loss.append(loss_edges)
         if utils.AcontainsB(self.prompt_pretrain_type, ['contrastive']):
             embs = self.model.forward_embs(data.x, data.train_pos_edge_index)
-            train_neg_edge_index = neg_sampling(data.train_neg_adj_mask, 1.0, data.train_pos_edge_index[0])
             logits, labels = self.info_nce_loss(embs, data.train_pos_edge_index[0], data.train_pos_edge_index[1],
-                                                train_neg_edge_index[0], train_neg_edge_index[1], self.temp)
+                                                data.train_neg_edge_index[0], data.train_neg_edge_index[1], self.temp)
             loss.append(self.loss_fn(logits, labels))
         if utils.AcontainsB(self.prompt_pretrain_type, ['attrMask']):
             x_masked = sampling_attr(data.x)
             pca = self.model.forward_attr(x_masked, data.edge_index)
             loss.append(F.mse_loss(pca[self.data.train_mask], data.pca[self.data.train_mask]))
-        loss = sum(loss)
+        loss = sum(loss)/len(loss)
         self.model.optimizers_zero_grad()
         loss.backward()
         self.model.optimizers_step()

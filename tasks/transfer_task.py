@@ -78,7 +78,9 @@ class TransNodeWrapper:
             emb_tgt = None
             emb_src = prompt_embs
         else:
-            self.node_embs = emb_src = emb_tgt = self.embeddings.embs
+            self.node_embs = self.embeddings.embs
+            emb_src =  F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
+            emb_tgt = F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
         ############################################
         self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
         if self.is_mlp:
@@ -98,7 +100,7 @@ class TransNodeWrapper:
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
 
-            prompted_embs, edge_index = self.build_prompt(emb_src, emb_tgt, prompt, edge_index)
+            prompted_embs, edge_index = self.build_prompt(self.node_embs, self.node_embs, prompt, edge_index)
         else:
             prompted_embs = emb_src
         if self.prompt_w_org_features:

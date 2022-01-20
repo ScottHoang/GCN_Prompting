@@ -90,16 +90,24 @@ class trainer(object):
             in_c += self.data.x.size(-1)
         return in_c
         # return self.data.x.size(-1)
-    def init_pretrain_decoder(self):
+    def init_pretrain(self):
         args = self.args
         edge_decoder = attr_decoder = None
+        lr = args.lr
+        args.lr = args.prompt_pretrain_lr
+        if args.compare_model:  # only compare model
+            Model = getattr(importlib.import_module("models"), self.type_model)
+            model = Model(args).to(self.device)
+        else:  # compare tricks combinations
+            model = TricksComb(args).to(self.device)
+        args.lr = lr
         if utils.AcontainsB(self.prompt_pretrain_type, ['edgeMask']):
-            edge_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 1,
-                                                args.dropout, lr=self.lr, weight_decay=self.weight_decay).to(self.device)
+            edge_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 2,
+                                                args.dropout, lr=self.prompt_pretrain_lr, weight_decay=self.weight_decay).to(self.device)
         if utils.AcontainsB(self.prompt_pretrain_type, ['attrMask']):
-            attr_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, self.prompt_pca, 1,
-                                         args.dropout, lr=self.lr, weight_decay=self.weight_decay).to(self.device)
-        return edge_decoder, attr_decoder
+            attr_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, self.prompt_pca, 2,
+                                         args.dropout, lr=self.prompt_pretrain_lr, weight_decay=self.weight_decay).to(self.device)
+        return model, edge_decoder, attr_decoder
 
     def init_predictor_by_type(self, type, in_c, args=None):
         if type == 'mlp':
@@ -162,7 +170,8 @@ class trainer(object):
             if self.type_model == 'VGAE':
                 pretrain_learner = create_vgae_task(self.model, self.args.batch_size, self.data, self.prompt_temp)
             else:
-                edge_decoder, attr_decoder = self.init_pretrain_decoder()
+                model, edge_decoder, attr_decoder = self.init_pretrain()
+                self.model = model
                 pretrain_learner = create_pretrain_task(self.model, self.batch_size, self.data, self.args, 1.0, edge_predictor=edge_decoder,
                                                         attr_predictor=attr_decoder)
                 # edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data, self.prompt_temp)

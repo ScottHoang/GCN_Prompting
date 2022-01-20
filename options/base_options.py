@@ -28,7 +28,7 @@ class BaseOptions():
 
         parser.add_argument('--type_model', type=str, default="GCN",
                             choices=MODELS)
-        parser.add_argument('--type_trick', type=str, default="None")
+        parser.add_argument('--type_trick', type=str, default="Initial")
         parser.add_argument('--layer_agg', type=str, default='concat',
                             choices=['concat', 'maxpool', 'attention', 'mean'],
                             help='aggregation function for skip connections')
@@ -61,7 +61,7 @@ class BaseOptions():
                              if False, then make a random division')
         parser.add_argument('--data-split-num', type=str, default='10',
                             help='If use-splitted is true, choose one of splitted data')
-        parser.add_argument('--test-ratio', type=float, default=0.3,
+        parser.add_argument('--test-ratio', type=float, default=0.2,
                             help='ratio of test links')
         parser.add_argument('--val-ratio', type=float, default=0.1,
                             help='ratio of validation links. If using the splitted data from SEAL,\
@@ -80,8 +80,9 @@ class BaseOptions():
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
         parser.add_argument('--prompt-pretrain-type', type=str, default='edgeMask')
+        parser.add_argument('--prompt-pretrain-lr', type=float, default=1e-3)
         parser.add_argument('--prompt-pca', type=int, default=50)
-        parser.add_argument('--prompt-trick', action='store_true')
+        parser.add_argument('--prompt-trick', type=bool, default=True)
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-neighbor-cutoff', type=int, default=-1)
         parser.add_argument('--prompt-raw', action='store_true')
@@ -94,7 +95,7 @@ class BaseOptions():
         parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')
         parser.add_argument('--prompt-type', type=str, default='bfr', help='bfs|mad')
         parser.add_argument('--prompt-lr', type=float, default=1e-3)
-        parser.add_argument('--prompt-w-org-features', action='store_true')
+        parser.add_argument('--prompt-w-org-features', type=bool, default=True)
         parser.add_argument('--prompt-save-embs', action='store_true')
         parser.add_argument('--prompt-get-mad', action='store_true')
         parser.add_argument('--prompt-mode', type=str,  default='',
@@ -149,11 +150,6 @@ class BaseOptions():
             # args.patience = 100
             # args.dim_hidden = 64
             args.activation = 'relu'
-            # edge task specific
-            args.use_splitted = False
-            # args.practical_neg_sample = True
-            args.observe_val_and_injection = False
-            args.init_attribute = False
 
             # args.N_exp = 100
 
@@ -187,11 +183,6 @@ class BaseOptions():
             args.activation = 'relu'
 
             args.res_alpha = 0.2
-            # edge task specific
-            args.use_splitted = False
-            # # args.practical_neg_sample = True
-            # args.observe_val_and_injection = False
-            # args.init_attribute = False
 
         elif args.dataset == 'ogbn-arxiv':
             args.num_feats = 128
@@ -209,7 +200,7 @@ class BaseOptions():
         elif args.dataset == 'CoauthorPhysics':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 8415
@@ -224,7 +215,7 @@ class BaseOptions():
         elif args.dataset == 'CoauthorCS':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 6805
@@ -237,7 +228,7 @@ class BaseOptions():
         elif args.dataset == 'TEXAS':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 1703
@@ -255,7 +246,7 @@ class BaseOptions():
         elif args.dataset == 'WISCONSIN':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 1703
@@ -271,7 +262,7 @@ class BaseOptions():
         elif args.dataset == 'CORNELL':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 1703
@@ -287,7 +278,7 @@ class BaseOptions():
         elif args.dataset == 'ACTOR':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 932
@@ -302,7 +293,7 @@ class BaseOptions():
         elif args.dataset == 'AmazonComputers':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 767
@@ -315,7 +306,7 @@ class BaseOptions():
         elif args.dataset == 'AmazonPhoto':
             # args.epochs = 1000
             # args.patience = 100
-            args.dim_hidden = 256
+            # args.dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 745

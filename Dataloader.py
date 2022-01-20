@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch_geometric
 import torch_geometric.transforms as T
+import torch_geometric.utils as U
 from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.datasets import Planetoid, Coauthor, WebKB, Actor, Amazon
 from torch_geometric.utils import remove_self_loops, add_self_loops, to_undirected, to_networkx
@@ -133,7 +134,11 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
 def prepare_data(data, args, which_run):
     data.pca = torch.tensor(PCA(n_components=args.prompt_pca).fit_transform(data.x.detach().cpu().numpy())).to(data.x.device)
     edge_index = data.edge_index.clone()
-    data = torch_geometric.utils.train_test_split_edges(data, val_ratio=args.val_ratio, test_ratio=args.test_ratio)
+    # train_test_split = T.RandomLinkSplit(is_undirected=True, num_val=args.val_ratio, num_test=args.test_ratio, split_labels=True)
+    # train_data, val_data, test_data = train_test_split(data)
+    # import pdb; pdb.set_trace()
+
+    data = split_edges(data, args)
     data.edge_index = edge_index
     print_data_stats(data)
     print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos_edge_index.size(1)}, "
