@@ -170,8 +170,12 @@ if __name__ == "__main__":
             files = [os.path.join(path, directory, f) for f in os.listdir(os.path.join(path, directory))]
             totalpaths.append(files)
 
+    processed_files = [os.path.join(dst, i[0:-4]) for i in os.listdir(dst)]
     for paths in tqdm(totalpaths):
         gif_name = os.path.join(dst, paths[0].split('/')[1])
+        if gif_name in processed_files:
+            print(f"{gif_name} already processed")
+            continue
         labels, coordinates, prompts, lrs, test_acc, edge_index= read_files(paths)
         filenames = generate_scatter_plots(labels, coordinates, prompts, lrs, test_acc, edge_index)
         create_gif(filenames, gif_name)

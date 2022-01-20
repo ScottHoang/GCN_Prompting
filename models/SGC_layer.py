@@ -56,7 +56,7 @@ class SGConv(MessagePassing):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.K = K
-        self.cached = cached
+        self.cached = False
         self.add_self_loops = add_self_loops
 
         self._cached_x = None

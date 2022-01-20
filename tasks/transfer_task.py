@@ -16,6 +16,7 @@ from utils import MAD, shortest_path
 from torch.nn.functional import dropout
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_geometric.utils as TGU
 class Att(nn.Module):
     def __init__(self, num_nodes, in_c, nhead=8, num_encoder=6, batch_first=True, dropout=0.5, lr=1e-3):
         super(Att, self).__init__()
@@ -77,7 +78,6 @@ class TransNodeWrapper:
             self.optimizer = CompoundOptimizers([self.predictor.optimizer, self.embeddings.optimizer],
                                                 schedulers)
 
-
     def __call__(self, x, edge_index=None):
         if self.prompt_raw:
             prompt_embs = self.embeddings.embs_raw
@@ -87,6 +87,32 @@ class TransNodeWrapper:
         else:
             self.node_embs = emb_src = emb_tgt = self.embeddings.embs
         ############################################
+        self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
+        # if self.prompt_k:
+        #     if self.prompt_continual:
+        #         self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
+        #     else:
+        #         if self.prompt is None:
+        #             self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
+        #         else:
+        #             prompt = self.prompt
+        #     if self.training and self.plot_info:
+        #         self.analyze_prompt(emb_src, emb_tgt, prompt)
+        #
+        #     self.prompted_embs = prompted_embs = self.build_prompt(emb_src, emb_tgt, prompt)
+        # else:
+        #     self.prompted_embs = prompted_embs = emb_src
+        # ###############################################
+        # if self.prompt_w_org_features:
+        #     self.final_embs = final_embs = torch.cat([prompted_embs,x], dim=-1)
+        # else:
+        #     self.final_embs = final_embs = prompted_embs
+        if self.is_mlp:
+            return self.predictor(self.final_embs)
+        else:
+            return self.predictor(self.final_embs, edge_index)
+
+    def get_embs_edge_index(self, emb_src, emb_tgt, x, edge_index):
         if self.prompt_k:
             if self.prompt_continual:
                 self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
@@ -98,19 +124,15 @@ class TransNodeWrapper:
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
 
-            self.prompted_embs = prompted_embs = self.build_prompt(emb_src, emb_tgt, prompt)
+            prompted_embs, edge_index = self.build_prompt(emb_src, emb_tgt, prompt, edge_index)
         else:
-            self.prompted_embs = prompted_embs = emb_src
-        ###############################################
+            prompted_embs = emb_src
         if self.prompt_w_org_features:
-            self.final_embs = final_embs = torch.cat([prompted_embs,x], dim=-1)
+            final_embs = torch.cat([prompted_embs,x], dim=-1)
         else:
-            self.final_embs = final_embs = prompted_embs
-        if self.is_mlp:
-            return self.predictor(final_embs)
-        else:
-            return self.predictor(final_embs, edge_index)
+            final_embs = prompted_embs
 
+        return final_embs, prompted_embs, x, edge_index
 
     def train(self):
         self._cache = True
@@ -129,7 +151,7 @@ class TransNodeWrapper:
         if hasattr(self, 'att_module'):
             self.att_module.eval()
 
-    def build_prompt(self, embs, prompt_embs, prompts_idx=None):
+    def build_prompt(self, embs, prompt_embs, prompts_idx=None, edge_index=None):
         prompts = prompt_embs[prompts_idx]
         pmode = self.prompt_aggr
         if pmode in ['concat', 'sum', 'mean']:
@@ -143,8 +165,17 @@ class TransNodeWrapper:
         elif pmode == 'att':
             embs = torch.cat([embs.unsqueeze(dim=1), prompts], dim=1)
             embs = self.att_module(embs)
-
-        return embs
+        elif pmode == 'edges':
+            assert edge_index is not None
+            src = torch.arange(prompts_idx.size(0)).tile(dims=(self.prompt_k,1)).t().reshape(1, -1).to(edge_index.device)
+            tgt = prompts_idx.reshape(1, -1)
+            prompt_edge_index = torch.cat([src, tgt], dim=0).to(edge_index.device)
+            edge_index = torch.cat([edge_index, prompt_edge_index], dim=-1)
+            edge_index = TGU.coalesce(edge_index)
+        if edge_index is not None:
+            return embs, edge_index
+        else:
+            return embs
 
     def get_prompt(self, x_src, x_tgt, num_nodes, edge_index):
         self.index = getattr(self, f"get_{self.prompt_type}_prompts")(x_src, x_tgt, num_nodes, edge_index)

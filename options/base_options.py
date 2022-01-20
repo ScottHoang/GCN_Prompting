@@ -79,6 +79,7 @@ class BaseOptions():
         # batch size for edge
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
+        parser.add_argument('--prompt-trick', action='store_true')
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-neighbor-cutoff', type=int, default=-1)
         parser.add_argument('--prompt-raw', action='store_true')
@@ -200,7 +201,6 @@ class BaseOptions():
             # args.patience = 200
             # args.dim_hidden = 256
 
-
         # ==============================================
         # ========== below are other datasets ==========
 
@@ -232,9 +232,6 @@ class BaseOptions():
             args.lr = 0.005
             args.weight_decay = 0.
 
-
-
-
         elif args.dataset == 'TEXAS':
             # args.epochs = 1000
             # args.patience = 100
@@ -245,7 +242,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.6
-            # args.lr = 0.005
+            args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9

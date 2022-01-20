@@ -85,7 +85,7 @@ class trainer(object):
                 if args.prompt_aggr in ['concat']:
                     in_c *= args.prompt_k
                     in_c += dim_hidden
-                elif self.prompt_aggr == 'att':
+                elif self.prompt_aggr in ['att', 'edges']:
                     pass
                 else:
                     in_c += dim_hidden
@@ -105,8 +105,10 @@ class trainer(object):
             args.num_feats = in_c
             args.num_layers = self.args.prompt_layer
             args.num_classes = self.num_classes
-            #
-            node_predictor = Model(args).to(self.device)
+            if not self.prompt_trick:
+                node_predictor = Model(args).to(self.device)
+            else:
+                node_predictor = TricksComb(args).to(self.device)
             optimizer_node = node_predictor.optimizer
         return node_predictor, optimizer_node
 

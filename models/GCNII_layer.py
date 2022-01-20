@@ -75,7 +75,7 @@ class GCNIIdenseConv(MessagePassing):
     _cached_edge_index: Optional[Tuple[torch.Tensor, torch.Tensor]]
     # _cached_adj_t: Optional[SparseTensor]
 
-    def __init__(self, in_channels, out_channels, improved=False, cached=True,
+    def __init__(self, in_channels, out_channels, improved=False, cached=False,
                  **kwargs):
 
         super(GCNIIdenseConv, self).__init__(aggr='add', **kwargs)

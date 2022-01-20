@@ -18,7 +18,7 @@ class TricksComb(nn.Module):
         for k, v in vars(args).items():
             setattr(self, k, v)
         # cannot cache graph structure when use graph dropout tricks
-        self.cached = self.transductive = args.transductive
+        self.cached = False #self.transductive = args.transductive
         if AcontainsB(self.type_trick, ['DropEdge', 'DropNode', 'FastGCN', 'LADIES']):
             self.cached = False
         # set self.has_residual_MLP as True when has residual connection

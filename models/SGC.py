@@ -10,7 +10,7 @@ class SGC(nn.Module):
         super(SGC, self).__init__()
         for k, v in vars(args).items():
             setattr(self, k, v)
-        self.cached = self.transductive = args.transductive
+        self.cached = False
         # bn used in dataset 'obgn-arxiv'
         # lin_first used in Coauthor_physics due to space limit
         self.bn = True if args.type_norm == 'batch' else False
