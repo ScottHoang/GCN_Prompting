@@ -10,6 +10,8 @@ from torch_geometric.datasets import Planetoid, Coauthor, WebKB, Actor, Amazon
 from torch_geometric.utils import remove_self_loops, add_self_loops, to_undirected, to_networkx
 from utils import *
 
+from sklearn.decomposition import  PCA
+
 def load_ogbn(dataset='ogbn-arxiv'):
     dataset = PygNodePropPredDataset(name=dataset)
     split_idx = dataset.get_idx_split()
@@ -128,13 +130,15 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
         data.edge_index = edge_index
     return data
 
-def prepare_edge_data(data, args, which_run):
-    # data = load_data(args.dataset, which_run, norm=None)
-    data = split_edges(data, args)
+def prepare_data(data, args, which_run):
+    data.pca = torch.tensor(PCA(n_components=args.prompt_pca).fit_transform(data.x.detach().cpu().numpy())).to(data.x.device)
+    edge_index = data.edge_index.clone()
+    data = torch_geometric.utils.train_test_split_edges(data, val_ratio=args.val_ratio, test_ratio=args.test_ratio)
+    data.edge_index = edge_index
     print_data_stats(data)
-    print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos.size(1) + data.train_neg.size(1)}, "
-          f"ValEdges: {data.val_pos.size(1) + data.val_neg.size(1)}, "
-          f"TestEdges: {data.test_pos.size(1) + data.test_neg.size(1)}")
+    print(f"data stats: TotalEdges {data.edge_index.size(1)}, trainEdges: {data.train_pos_edge_index.size(1)}, "
+          f"ValEdges: {data.val_pos_edge_index.size(1) + data.val_neg_edge_index.size(1)}, "
+          f"TestEdges: {data.test_pos_edge_index.size(1) + data.test_neg_edge_index.size(1)}")
     return data
 
 def print_data_stats(data):

@@ -92,11 +92,11 @@ class TaskPredictor(torch.nn.Module):
         self.num_feats = in_channels
         self.lins = torch.nn.ModuleList()
         # self.lins.append(torch.nn.Linear(in_channels, hidden_channels))
-        hidden_channels = in_channels
+        _inc = in_channels
         for _ in range(num_layers-1):
-            self.lins.append(torch.nn.Linear(hidden_channels, hidden_channels//2))
-            hidden_channels = hidden_channels // 2
-        self.lins.append(torch.nn.Linear(hidden_channels, out_channels))
+            self.lins.append(torch.nn.Linear(_inc, hidden_channels))
+            _inc = hidden_channels
+        self.lins.append(torch.nn.Linear(_inc, out_channels))
 
         self.dropout = dropout
         self.optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
@@ -157,11 +157,11 @@ def split_edges(data, args):
     perm = torch.randperm(row.size(0))
     row, col = row[perm], col[perm]
     r, c = row[:n_v], col[:n_v]
-    data.val_pos = torch.stack([r, c], dim=0)
+    data.val_pos_edge_index = torch.stack([r, c], dim=0)
     r, c = row[n_v:n_v + n_t], col[n_v:n_v + n_t]
-    data.test_pos = torch.stack([r, c], dim=0)
+    data.test_pos_edge_index = torch.stack([r, c], dim=0)
     r, c = row[n_v + n_t:], col[n_v + n_t:]
-    data.train_pos = torch.stack([r, c], dim=0)
+    data.train_pos_edge_index = torch.stack([r, c], dim=0)
 
     # sample negative edges
     if args.practical_neg_sample == False:
@@ -178,10 +178,10 @@ def split_edges(data, args):
         neg_row, neg_col = neg_row[perm], neg_col[perm]
 
         row, col = neg_row[:n_v], neg_col[:n_v]
-        data.val_neg = torch.stack([row, col], dim=0)
+        data.val_neg_edge_index = torch.stack([row, col], dim=0)
 
         row, col = neg_row[n_v:n_v + n_t], neg_col[n_v:n_v + n_t]
-        data.test_neg = torch.stack([row, col], dim=0)
+        data.test_neg_edge_index = torch.stack([row, col], dim=0)
 
         row, col = neg_row[n_v + n_t:], neg_col[n_v + n_t:]
         data.train_neg = torch.stack([row, col], dim=0)
@@ -218,6 +218,7 @@ def split_edges(data, args):
         data.train_neg = torch.stack([row, col], dim=0)
 
     return data
+
 
 
 def k_hop_subgraph(node_idx, num_hops, edge_index, max_nodes_per_hop=None, num_nodes=None):
@@ -661,3 +662,8 @@ def shortest_path(num_nodes, edge_index):
     distance, path = algos.floyd_warshall(adj)
     return torch.tensor(distance).to(edge_index.device)
 
+def AcontainsB(A, listB):
+    # A: string; listB: list of strings
+    for s in listB:
+        if s in A: return True
+    return False

@@ -59,13 +59,6 @@ class TransNodeWrapper:
 
         self.init_optimizer()
         self.training = True
-        # if self.prompt_save_embs:
-        #     self.root = root = os.path.join('embeddings', self.prompt_mode, self.dataset,
-        #                         datetime.datetime.now().strftime('%y-%m-%d||%H:%M')
-        #                         )
-        #     self.count = 0
-        #     if not os.path.isdir(root):
-        #         os.makedirs(root)
 
     def init_optimizer(self):
         if self.prompt_aggr == 'att':
@@ -88,25 +81,6 @@ class TransNodeWrapper:
             self.node_embs = emb_src = emb_tgt = self.embeddings.embs
         ############################################
         self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
-        # if self.prompt_k:
-        #     if self.prompt_continual:
-        #         self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
-        #     else:
-        #         if self.prompt is None:
-        #             self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
-        #         else:
-        #             prompt = self.prompt
-        #     if self.training and self.plot_info:
-        #         self.analyze_prompt(emb_src, emb_tgt, prompt)
-        #
-        #     self.prompted_embs = prompted_embs = self.build_prompt(emb_src, emb_tgt, prompt)
-        # else:
-        #     self.prompted_embs = prompted_embs = emb_src
-        # ###############################################
-        # if self.prompt_w_org_features:
-        #     self.final_embs = final_embs = torch.cat([prompted_embs,x], dim=-1)
-        # else:
-        #     self.final_embs = final_embs = prompted_embs
         if self.is_mlp:
             return self.predictor(self.final_embs)
         else:

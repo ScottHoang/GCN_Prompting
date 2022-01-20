@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from ogb.nodeproppred import Evaluator
 
 import utils
-from Dataloader import load_data, load_ogbn, prepare_edge_data
+from Dataloader import load_data, load_ogbn, prepare_data
 from tricks import TricksComb  # TricksCombSGC
 from utils import AcontainsB
 from utils import TaskPredictor
@@ -26,6 +26,7 @@ from tasks.node_task import create_node_task
 from tasks.transfer_task import create_domain_transfer_task
 from tasks.baseline_node_task import create_node_task as create_nodeBaseLine_task
 from tasks.vgae_task import create_vgae_task, create_vge_node_transfer_task
+from tasks.pretraining_task import create_pretrain_task
 from models import VGAE
 import matplotlib.pyplot as plt
 import time
@@ -49,16 +50,12 @@ class trainer(object):
         self.args = args
         self.device = torch.device(f'cuda:{args.cuda_num}' if args.cuda else 'cpu')
         self.which_run = which_run
-        # set dataloader
-        # self.set_dataloader()
-        #
         if args.task != 'node':
             self.num_classes = args.num_classes
             args.num_classes = args.dim_hidden
             self.edge_predictor = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 2,
                                                 args.dropout, lr=0.0005, weight_decay=self.weight_decay).to(self.device)
             self.optimizer_edge = self.edge_predictor.optimizer
-            # self.node_predictor, self.optimizer_node = self.init_node_predictor()
 
         if args.compare_model:  # only compare model
             Model = getattr(importlib.import_module("models"), self.type_model)
@@ -93,6 +90,16 @@ class trainer(object):
             in_c += self.data.x.size(-1)
         return in_c
         # return self.data.x.size(-1)
+    def init_pretrain_decoder(self):
+        args = self.args
+        edge_decoder = attr_decoder = None
+        if utils.AcontainsB(self.prompt_pretrain_type, ['edgeMask']):
+            edge_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 1,
+                                                args.dropout, lr=self.lr, weight_decay=self.weight_decay).to(self.device)
+        if utils.AcontainsB(self.prompt_pretrain_type, ['attrMask']):
+            attr_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, self.prompt_pca, 1,
+                                         args.dropout, lr=self.lr, weight_decay=self.weight_decay).to(self.device)
+        return edge_decoder, attr_decoder
 
     def init_predictor_by_type(self, type, in_c, args=None):
         if type == 'mlp':
@@ -117,17 +124,6 @@ class trainer(object):
         in_c = self.get_channel_by_task(task)
         return self.init_predictor_by_type(args.prompt_head, in_c, args)
 
-    def init_auto_prompt(self):
-
-        # candidates = self.get_prompt_candidates()
-
-        candidates = torch.randint(0, self.data.x.size(0), (self.args.prompt_k,))
-        node_embeddings = Embeddings(self.model(self.data.x, self.data.edge_index))
-        node_embeddings_grad = GradientStorage(node_embeddings)
-
-        return candidates, node_embeddings, node_embeddings_grad
-        # grad = embedding_grad.get()
-
     def set_dataloader(self):
         self.split_idx = None
         if self.dataset == 'ogbn-arxiv':
@@ -143,7 +139,7 @@ class trainer(object):
                                                            walk_length=self.args.prompt_k)
 
         # elif self.args.task in ['edge', 'vgae', 'dt', 'dtbfs', 'dtzero', 'prompt', 'nodebs', 'dtvgae']:
-        self.data = prepare_edge_data(self.data, self.args, self.which_run).to(self.device)
+        self.data = prepare_data(self.data, self.args, self.which_run).to(self.device)
 
     def train_and_test(self):
         if self.args.task in ['node', 'edge']:
@@ -164,11 +160,14 @@ class trainer(object):
             self.args.task = 'edge'
             self.set_dataloader()
             if self.type_model == 'VGAE':
-                edge_learner = create_vgae_task(self.model, self.args.batch_size, self.data, self.prompt_temp)
+                pretrain_learner = create_vgae_task(self.model, self.args.batch_size, self.data, self.prompt_temp)
             else:
-                edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data, self.prompt_temp)
-            train_fn = lambda: self.sequential_run(edge_learner.task_train, edge_learner.task_test)
-            pretrain_stats, _ = self.train_test_frame(train_fn, edge_learner.stats, self.epochs)
+                edge_decoder, attr_decoder = self.init_pretrain_decoder()
+                pretrain_learner = create_pretrain_task(self.model, self.batch_size, self.data, self.args, 1.0, edge_predictor=edge_decoder,
+                                                        attr_predictor=attr_decoder)
+                # edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data, self.prompt_temp)
+            train_fn = lambda: self.sequential_run(pretrain_learner.task_train, pretrain_learner.task_test)
+            pretrain_stats, _ = self.train_test_frame(train_fn, pretrain_learner.stats, self.epochs)
             ########################### predictor training
             # init predictor
             self.args.task = task
@@ -205,7 +204,6 @@ class trainer(object):
             if self.plot_info:
                 self.plot_figures(internal_stats, all_stats)
             return stats
-
         elif self.args.task == 'nodebs':
             task = self.args.task
             self.args.task = 'edge'
