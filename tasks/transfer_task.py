@@ -59,6 +59,7 @@ class TransNodeWrapper:
 
         self.init_optimizer()
         self.training = True
+        self.node_predicted_labels = None
 
     def init_optimizer(self):
         if self.prompt_aggr == 'att':
@@ -84,9 +85,12 @@ class TransNodeWrapper:
         ############################################
         self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
         if self.is_mlp:
-            return self.predictor(self.final_embs)
+            pred = self.predictor(self.final_embs)
         else:
-            return self.predictor(self.final_embs, edge_index)
+            pred = self.predictor(self.final_embs, edge_index)
+        if not self.training:
+            self.node_predicted_labels = pred
+        return pred
 
     def get_embs_edge_index(self, emb_src, emb_tgt, x, edge_index):
         if self.prompt_k:
@@ -100,7 +104,7 @@ class TransNodeWrapper:
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
 
-            prompted_embs, edge_index = self.build_prompt(self.node_embs, self.node_embs, prompt, edge_index)
+            prompted_embs, edge_index = self.build_prompt(emb_src, emb_tgt, prompt, edge_index)
         else:
             prompted_embs = emb_src
         if self.prompt_w_org_features:
@@ -144,7 +148,7 @@ class TransNodeWrapper:
         elif pmode == 'edges':
             assert edge_index is not None
             src = torch.arange(prompts_idx.size(0)).tile(dims=(self.prompt_k,1)).t().reshape(1, -1).to(edge_index.device)
-            tgt = prompts_idx.reshape(1, -1)
+            tgt = prompts_idx.reshape(1, -1).to(edge_index.device)
             prompt_edge_index = torch.cat([src, tgt], dim=0).to(edge_index.device)
             edge_index = torch.cat([edge_index, prompt_edge_index], dim=-1)
             edge_index = TGU.coalesce(edge_index)
@@ -266,6 +270,57 @@ class TransNodeWrapper:
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
+    def get_class_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            labels = F.log_softmax(self.node_predicted_labels, 1).argmax(dim=-1, keepdim=True)
+            num_labels = self.data.y.max()
+            avg_class_embs = torch.empty_like(x_src)
+            for i in range(num_labels+1):
+                class_idx = labels.eq(i).squeeze()
+                avg_class_embs[class_idx] = x_src[class_idx].mean(dim=0)
+            sim = 1 - U.pair_cosine_similarity(avg_class_embs, x_tgt)  # cos distance ~ [0, 2]
+            sim_inv = sim.mul(-1) # smaller is better
+            index = sim_inv.topk(self.prompt_k, dim=-1)[1]
+            return index
+
+    def get_class_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            _, sim, _ = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            sim_inv = sim.mul(-1)
+            index = sim_inv.topk(self.prompt_k, dim=-1)[1]
+            return index
+
+    def get_classmicmap_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
+            index = score.topk(self.prompt_k, dim=-1)[1]
+            return index
+
+    def get_classmicmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
+            index = score.topk(self.prompt_k, dim=-1)[1]
+            return index
+
+    def get_classmacmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
+            index = score.topk(self.prompt_k, dim=-1)[1]
+            return index
+
     def get_micmap_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
         #d#####
@@ -313,6 +368,31 @@ class TransNodeWrapper:
         sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
         mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
         return log_distance, sim ,mean_sim
+
+    def _prep_class_sim(self, x_src, x_tgt, num_nodes, edge_index):
+        if self.node_predicted_labels is None:
+            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
+        else:
+            distance = self.distance.clone()
+            if self.prompt_neighbor_cutoff > 0:
+                distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
+            else:
+                distance[distance.eq(510)] = 1
+            distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+            distance.fill_diagonal_(1)  # log(diag) = 0
+            distance = (distance + distance.t()) / 2
+            log_distance = torch.log(distance / self.prompt_distance_temp)
+            labels = F.log_softmax(self.node_predicted_labels, 1).argmax(dim=-1, keepdim=True)
+            num_labels = self.data.y.max()
+            avg_class_embs = torch.empty_like(x_src)
+            for i in range(num_labels+1):
+                class_idx = labels.eq(i).squeeze()
+                avg_class_embs[class_idx] = x_src[class_idx].mean(dim=0)
+            adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+            adj.fill_diagonal_(0)
+            sim = 1 - U.pair_cosine_similarity(avg_class_embs, x_tgt)  # cos distance ~ [0, 2]
+            mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
+            return log_distance, sim, mean_sim
 
     def get_bfs_prompts(self, x, x_tgt, num_nodes, edge_index):
         assert self.prompt_k > 0

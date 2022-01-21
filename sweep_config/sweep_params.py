@@ -42,7 +42,7 @@ parameters_dict = {
         'values': [True, False]
     },
     'prompt_type': {
-        'values': ['micmap', 'micmip', 'macmip']
+        'values': ['micmap', 'micmip', 'macmip', 'class', 'classmicmip', 'classmicmap', 'classmacmip']
     },
     'alpha': {
         'values': [0.6, 0.7, 0.8, 0.9]
@@ -50,4 +50,8 @@ parameters_dict = {
     'dim_hidden' : {
       'values': [16,32,64,128,256]
     },
+    'embedding_dropout' : {
+        'min': 0.1,
+        'max': 0.9
+    }
 }
