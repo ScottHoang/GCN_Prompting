@@ -60,6 +60,7 @@ class TransNodeWrapper:
         self.init_optimizer()
         self.training = True
         self.node_predicted_labels = None
+        self.prompt_freq_cnt = 0
 
     def init_optimizer(self):
         if self.prompt_aggr == 'att':
@@ -94,7 +95,7 @@ class TransNodeWrapper:
 
     def get_embs_edge_index(self, emb_src, emb_tgt, x, edge_index):
         if self.prompt_k:
-            if self.prompt_continual:
+            if self.prompt_continual and self.training and self.prompt_freq_cnt % self.prompt_freq == 0:
                 self.prompt = prompt = self.get_prompt(emb_src, emb_tgt, x.size(0), edge_index)
             else:
                 if self.prompt is None:
@@ -103,7 +104,8 @@ class TransNodeWrapper:
                     prompt = self.prompt
             if self.training and self.plot_info:
                 self.analyze_prompt(emb_src, emb_tgt, prompt)
-
+            if self.training:
+                self.prompt_freq_cnt += 1
             prompted_embs, edge_index = self.build_prompt(emb_src, emb_tgt, prompt, edge_index)
         else:
             prompted_embs = emb_src
@@ -162,13 +164,8 @@ class TransNodeWrapper:
         return self.index
     
     def analyze_prompt(self, src, tgt, index):
-        if not self.prompt_continual or self.prompt_type in  ['bfs', 'random', 'ntxent', 'ntxent2',
-                                                              'ntxent3', 'exp', 'micmap', 'macmip', 'micmip', 'rubberband']:
-            if self.prompt_type in ['bfs', 'random', 'ntxent', 'ntxent2', 'ntxent3', 'exp', 'expv2', 'micmap', 'macmip', 'micmip', 'rubberband']:
-                self.cos_distance = MAD(src, torch.ones(src.size(0), src.size(0)).to(src.device),
-                                        mean=False, emb_tgt=tgt)
-            else:
-                self.get_prompt(src, tgt, src.size(0), self.data.edge_index)
+        self.cos_distance = MAD(src, torch.ones(src.size(0), src.size(0)).to(src.device),
+                                    mean=False, emb_tgt=tgt)
         tgt = src if tgt is None else tgt
         mean_distances = []
         mean_i2nr = []
@@ -274,22 +271,7 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            labels = F.log_softmax(self.node_predicted_labels, 1).argmax(dim=-1, keepdim=True)
-            num_labels = self.data.y.max()
-            avg_class_embs = torch.empty_like(x_src)
-            for i in range(num_labels+1):
-                class_idx = labels.eq(i).squeeze()
-                avg_class_embs[class_idx] = x_src[class_idx].mean(dim=0)
-            sim = 1 - U.pair_cosine_similarity(avg_class_embs, x_tgt)  # cos distance ~ [0, 2]
-            sim_inv = sim.mul(-1) # smaller is better
-            index = sim_inv.topk(self.prompt_k, dim=-1)[1]
-            return index
-
-    def get_class_prompts(self, x_src, x_tgt, num_nodes, edge_index):
-        if self.node_predicted_labels is None:
-            return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
-        else:
-            _, sim, _ = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            _, sim, _ , _= self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
             sim_inv = sim.mul(-1)
             index = sim_inv.topk(self.prompt_k, dim=-1)[1]
             return index
@@ -298,7 +280,7 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            log_distance, sim, mean_sim, labels = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
             score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
             index = score.topk(self.prompt_k, dim=-1)[1]
             return index
@@ -307,7 +289,7 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            log_distance, sim, mean_sim, labels = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
             score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
             index = score.topk(self.prompt_k, dim=-1)[1]
             return index
@@ -316,7 +298,7 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            log_distance, sim, mean_sim = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            log_distance, sim, mean_sim, labels = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
             score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
             index = score.topk(self.prompt_k, dim=-1)[1]
             return index
@@ -339,15 +321,6 @@ class TransNodeWrapper:
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
         #d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
-        index = score.topk(self.prompt_k, dim=-1)[1]
-        return index
-
-    def get_rubberband_prompts(self, x_src, x_tgt, num_nodes, edge_index):
-        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
-        #d#####
-        score1 = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
-        score2 = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
-        score = score1 + score2
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
@@ -392,7 +365,7 @@ class TransNodeWrapper:
             adj.fill_diagonal_(0)
             sim = 1 - U.pair_cosine_similarity(avg_class_embs, x_tgt)  # cos distance ~ [0, 2]
             mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
-            return log_distance, sim, mean_sim
+            return log_distance, sim, mean_sim, labels
 
     def get_bfs_prompts(self, x, x_tgt, num_nodes, edge_index):
         assert self.prompt_k > 0

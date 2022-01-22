@@ -79,6 +79,7 @@ class BaseOptions():
         # batch size for edge
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
+        parser.add_argument('--prompt-freq', type=int, default=1)
         parser.add_argument('--prompt-pretrain-type', type=str, default='edgeMask')
         parser.add_argument('--prompt-pretrain-lr', type=float, default=1e-3)
         parser.add_argument('--prompt-pca', type=int, default=50)

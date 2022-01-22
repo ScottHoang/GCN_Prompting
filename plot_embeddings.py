@@ -172,6 +172,8 @@ if __name__ == "__main__":
 
     processed_files = [os.path.join(dst, i[0:-4]) for i in os.listdir(dst)]
     for paths in tqdm(totalpaths):
+        if len(paths) == 0:
+            continue
         gif_name = os.path.join(dst, paths[0].split('/')[1])
         if gif_name in processed_files:
             print(f"{gif_name} already processed")

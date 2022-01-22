@@ -10,7 +10,8 @@ from trainer import trainer
 from utils import set_seed, print_args, overwrite_with_yaml
 from collections import defaultdict
 import wandb
-from sweep_config.sweep_params import parameters_dict
+from sweep_config import *
+import importlib
 
 global args
 def main(args):
@@ -50,9 +51,10 @@ def sweep():
     sweep_config = {'method': 'bayes'}
     metric = {'name': 'test_acc', 'goal': 'maximize'}
     sweep_config['metric'] = metric
+    parameters_dict = eval(f'{args.dataset}')
     sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config,
-                           project=f'sweep-{args.dataset}-7')
+                           project=f'sweep-{args.dataset}-8')
     wandb.agent(sweep_id, function=run_sweep)
 
 def run_sweep():
