@@ -307,13 +307,21 @@ class TransNodeWrapper:
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
         #d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
+        score.fill_diagonal_(0)
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
     def get_macmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
-        #d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)).div(log_distance)
+        score.fill_diagonal_(0)
+        index = score.topk(self.prompt_k, dim=-1)[1]
+        return index
+
+    def get_macmap_prompts(self, x_src, x_tgt, num_nodes, edge_index):
+        log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
+        score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp)) * log_distance
+        score.fill_diagonal_(0)
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
@@ -333,7 +341,7 @@ class TransNodeWrapper:
         distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
         distance.fill_diagonal_(1)  # log(diag) = 0
         distance = (distance + distance.t()) / 2
-        log_distance = torch.log(distance / self.prompt_distance_temp)
+        log_distance = torch.log(distance) / self.prompt_distance_temp
         #######
         adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
         adj.fill_diagonal_(0)
@@ -341,6 +349,25 @@ class TransNodeWrapper:
         sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
         mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
         return log_distance, sim ,mean_sim
+
+    def _prep_cdsp(self, x_src, x_tgt, num_nodes, edge_index):
+        distance = self.distance.clone()
+        if self.prompt_neighbor_cutoff > 0:
+            distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
+        else:
+            distance[distance.eq(510)] = 1
+        distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+        distance.fill_diagonal_(1)  # log(diag) = 0
+        distance = (distance + distance.t()) / 2
+        log_distance = torch.log(distance) / self.prompt_distance_temp
+        #######
+        adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
+        adj.fill_diagonal_(0)
+        #####
+        sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
+        logexpsim = torch.log(torch.exp(sim/self.prompt_temp))
+        logexpmeansim = torch.logsumexp(sim/self.prompt_temp, dim=-1, keepdim=True)
+        return log_distance, logexpsim, logexpmeansim
 
     def _prep_class_sim(self, x_src, x_tgt, num_nodes, edge_index):
         if self.node_predicted_labels is None:
@@ -407,13 +434,6 @@ class TransNodeWrapper:
     def record_stats(self, stats):
         for k ,v in stats:
             self.stats[k].append(v)
-
-    # def save_embs(self, node_embs, final_embs, prompts):
-    #     if self.count % 20 == 0:
-    #         torch.save({'node_embs': node_embs, 'final_embs': final_embs, 'prompts': prompts, 'labels': self.data.y,
-    #                     'edges': self.data.edge_index, 'lr': self.embeddings.optimizer.param_groups[0]['lr']},
-    #                    os.path.join(self.root, f'embeddings_{self.count}.pth.tar'))
-    #     self.count += 1
 
 def create_domain_transfer_task(model, predictor, embeddings, args, task, data, split_idx):
     wrap = TransNodeWrapper(model, predictor, embeddings, args, task, data)

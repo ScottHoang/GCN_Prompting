@@ -75,6 +75,7 @@ class PretrainLearner(Learner):
         self.loss_fn2 = torch.nn.CrossEntropyLoss()
         self.temp = 1.0
 
+
     def task_train(self):
         self.model.train()
         loss_epoch = []
@@ -92,8 +93,8 @@ class PretrainLearner(Learner):
                                                 data.train_neg_edge_index[0], data.train_neg_edge_index[1], self.temp)
             loss.append(self.loss_fn(logits, labels))
         if utils.AcontainsB(self.prompt_pretrain_type, ['attrMask']):
-            x_masked = sampling_attr(data.x)
-            pca = self.model.forward_attr(x_masked, data.edge_index)
+            # x, masked_idx = sampling_attr(data.x)
+            pca = self.model.forward_attr(self.data.x, data.edge_index)
             loss.append(F.mse_loss(pca[self.data.train_mask], data.pca[self.data.train_mask]))
         loss = sum(loss)/len(loss)
         self.model.optimizers_zero_grad()
@@ -128,7 +129,6 @@ class PretrainLearner(Learner):
                                             data.test_neg_edge_index[1], self.temp)
         loss_test = self.loss_fn(logits, labels)
         return {"loss_vcl": loss_valid.item(), 'loss_tcl': loss_test.item()}
-
 
     def task_test_attrMask(self):
         data = self.data
@@ -184,13 +184,23 @@ class PretrainLearner(Learner):
         labels = torch.cat([torch.ones_like(positives), torch.zeros_like(negatives)], dim=0)
         return logits, labels
 
-    @staticmethod
-    def stats(best_stats, stats, bad_counter):
-        if stats['val_roc_auc'] > best_stats['val_roc_auc']:
-            best_stats.update(stats)
-            bad_counter = 0
+    def stats(self, best_stats, stats, bad_counter):
+        if utils.AcontainsB(self.prompt_pretrain_type, ['edgeMask']):
+            if stats['val_roc_auc'] > best_stats['val_roc_auc']:
+                                                                    best_stats.update(stats)
+                                                                    bad_counter = 0
+            else:
+                bad_counter += 1
+        elif utils.AcontainsB(self.prompt_pretrain_type, ['contrastive']):
+            if stats['loss_vcl'] < best_stats['loss_vcl']:
+                best_stats = stats
+            else:
+                bad_counter += 1
         else:
-            bad_counter += 1
+            if stats['loss_vpca'] < best_stats['loss_vpca']:
+                best_stats = stats
+            else:
+                bad_counter += 1
         return best_stats, bad_counter
 
 def neg_sampling(neg_adj_mask, ratio, row):
@@ -214,13 +224,12 @@ def sampling_edges(edge_index, neg_adj_mask, ratio=0.2):
     return masked_edge, [pos_row, pos_col], [neg_row, neg_col]
 
 def sampling_attr(x, ratio=0.2):
+    x = x.clone()
     N, attr_size = x.shape
-    num_mask = int(math.floor(ratio * attr_size))
-    mask_vector = torch.ones(attr_size)
-    mask_idx = torch.randperm(attr_size)[0:num_mask]
-    mask_vector[mask_idx] = 0
-    x_masked = x * mask_vector.to(x.device)
-    return x_masked
+    num_mask = int(math.floor(ratio * N))
+    mask_idx = torch.randperm(N)[0:num_mask]
+    x[mask_idx] = 0
+    return x, mask_idx
 
 def create_pretrain_task(model, batch_size, data, args, temp=1.0, edge_predictor=None, attr_predictor=None):
     wrap = PretrainWrapper(model, edge_predictor, attr_predictor)

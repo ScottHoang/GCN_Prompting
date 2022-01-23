@@ -56,12 +56,16 @@ class trainer(object):
             self.edge_predictor = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 2,
                                                 args.dropout, lr=0.0005, weight_decay=self.weight_decay).to(self.device)
             self.optimizer_edge = self.edge_predictor.optimizer
-
-        if args.compare_model:  # only compare model
-            Model = getattr(importlib.import_module("models"), self.type_model)
-            self.model = Model(args)
-        else:  # compare tricks combinations
-            self.model = TricksComb(args)
+        if args.type_model != 'mlp':
+            if args.compare_model:  # only compare model
+                Model = getattr(importlib.import_module("models"), self.type_model)
+                self.model = Model(args)
+            else:  # compare tricks combinations
+                self.model = TricksComb(args)
+        else:
+            self.model = TaskPredictor(args.num_feats, args.dim_hidden, self.dim_hidden, args.num_layers,
+                                           args.dropout, lr=self.args.lr, weight_decay=self.weight_decay).to(
+                self.device)
         self.model.to(self.device)
         self.optimizer = self.model.optimizer
         self.run_iter = 0
@@ -95,11 +99,16 @@ class trainer(object):
         edge_decoder = attr_decoder = None
         lr = args.lr
         args.lr = args.prompt_pretrain_lr
-        if args.compare_model:  # only compare model
-            Model = getattr(importlib.import_module("models"), self.type_model)
-            model = Model(args).to(self.device)
-        else:  # compare tricks combinations
-            model = TricksComb(args).to(self.device)
+        if args.type_model != 'mlp':
+            if args.compare_model:  # only compare model
+                Model = getattr(importlib.import_module("models"), self.type_model)
+                model = Model(args)
+            else:  # compare tricks combinations
+                model = TricksComb(args)
+        else:
+            model = TaskPredictor(args.num_feats, args.dim_hidden, self.dim_hidden, args.num_layers,
+                                       args.dropout, lr=self.args.lr, weight_decay=self.weight_decay)
+        model.to(self.device)
         args.lr = lr
         if utils.AcontainsB(self.prompt_pretrain_type, ['edgeMask']):
             edge_decoder = TaskPredictor(args.dim_hidden, args.dim_hidden, 1, 2,
@@ -111,7 +120,7 @@ class trainer(object):
 
     def init_predictor_by_type(self, type, in_c, args=None):
         if type == 'mlp':
-            node_predictor = TaskPredictor(in_c, args.dim_hidden, self.num_classes, args.prompt_layer,
+            node_predictor = TaskPredictor(in_c, args.prompt_dim_hidden, self.num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr, weight_decay=self.weight_decay).to(self.device)
             optimizer_node = node_predictor.optimizer
         else:
@@ -120,6 +129,7 @@ class trainer(object):
             args.num_feats = in_c
             args.num_layers = self.args.prompt_layer
             args.num_classes = self.num_classes
+            args.dim_hidden = args.prompt_dim_hidden
             if not self.prompt_trick:
                 node_predictor = Model(args).to(self.device)
             else:

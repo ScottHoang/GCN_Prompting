@@ -109,7 +109,7 @@ class TaskPredictor(torch.nn.Module):
             lin.reset_parameters()
 
     def forward(self, x_i, x_j=None):
-        if x_j is not None:
+        if x_j is not None and x_i.shape == x_j.shape:
             x = x_i * x_j
         else:
             x = x_i

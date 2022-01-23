@@ -1,47 +1,48 @@
 parameters_dict = {
     'prompt_k': {
-        'values' : [1, 2, 3, 4, 5] },
+        'values' : [2, 3, 4, 5] },
     'prompt_lr': {
-        'min': 1e-2,
+        'min': 1e-1,
         'max': 5e-1,
     },
     'lr': {
-        'min': 1e-2,
+        'min': 1e-3,
         'max': 5e-2,
     },
     'prompt_pretrain_lr': {
-        'min': 5e-4,
+        'min': 1e-3,
         'max': 5e-2
     },
     'prompt_pretrain_type': {
-        'values' : ['edgeMask', 'edgeMask+contrastive+attrMask']
+        'values' : ['edgeMask', 'contrastive', 'attrMask', 'edgeMask+contrastive', 'edgeMask+attrMask', 'edgeMask+contrastive+attrMask']
     },
     'prompt_temp': {
         'min':0.1,
         'max':5.0}
     ,
     'prompt_distance_temp': {
-        'values': [1.0, 2.0, 3.0, 4.0, 5.0]
+        'min':0.1,
+        'max':5.0,
     },
     'prompt_neighbor_cutoff': {
-        'values': [-1]},
+        'values': [-1, 3, 5]},
     'prompt_layer': {
-        'values': [8, 16],
+        'values': [3, 8, 16, 32],
     },
     'prompt_head':{
         'values' : ['GCN', "SGC"]
     },
     'prompt_aggr': {
-        'values': ['concat', 'mean', 'edges'],
+        'values': ['concat', 'sum', 'mean', 'edges'],
     },
     'epochs': {
-        'values': [480, 960]
+        'values': [120, 240, 480, 960, 1000]
     },
     'prompt_continual': {
-        'values': [True]
+        'values': [True, False]
     },
     'prompt_type': {
-        'values': ['micmap', 'micmip', 'macmip', 'classmicmip', 'classmicmap', 'classmacmip']
+        'values': ['micmap', 'micmip', 'macmip', 'macmap']
     },
     'alpha': {
         'values': [0.6, 0.7, 0.8, 0.9]
@@ -49,10 +50,11 @@ parameters_dict = {
     'dim_hidden' : {
       'values': [16,32,64,128,256]
     },
+    'prompt_dim_hidden' : {
+        'values': [16,32,64,128,256]
+    },
     'embedding_dropout' : {
-        'min': 0.1,
+        'min': 0.3,
         'max': 0.6
     }
 }
-def call():
-    return parameters_dict

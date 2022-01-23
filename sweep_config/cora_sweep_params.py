@@ -1,8 +1,8 @@
 parameters_dict = {
     'prompt_k': {
-        'values' : [1, 2, 3, 4, 5] },
+        'values' : [2, 3, 4, 5] },
     'prompt_lr': {
-        'min': 1e-2,
+        'min': 1e-1,
         'max': 5e-1,
     },
     'lr': {
@@ -10,11 +10,11 @@ parameters_dict = {
         'max': 5e-2,
     },
     'prompt_pretrain_lr': {
-        'min': 5e-4,
+        'min': 1e-3,
         'max': 5e-2
     },
     'prompt_pretrain_type': {
-        'values' : ['edgeMask', 'edgeMask+contrastive', 'edgeMask+contrastive+attrMask']
+        'values' : ['edgeMask', 'contrastive', 'attrMask', 'edgeMask+contrastive', 'edgeMask+attrMask', 'edgeMask+contrastive+attrMask']
     },
     'prompt_temp': {
         'min':0.1,
@@ -27,7 +27,7 @@ parameters_dict = {
     'prompt_neighbor_cutoff': {
         'values': [-1, 3, 5]},
     'prompt_layer': {
-        'values': [3, 8, 16, 32],
+        'values': [2, 3],
     },
     'prompt_head':{
         'values' : ['GCN', "SGC"]
@@ -42,7 +42,7 @@ parameters_dict = {
         'values': [True, False]
     },
     'prompt_type': {
-        'values': ['micmap', 'micmip', 'macmip', 'class', 'classmicmip', 'classmicmap', 'classmacmip']
+        'values': ['micmap', 'micmip', 'macmip', 'macmap']
     },
     'alpha': {
         'values': [0.6, 0.7, 0.8, 0.9]
@@ -50,8 +50,14 @@ parameters_dict = {
     'dim_hidden' : {
       'values': [16,32,64,128,256]
     },
+    'prompt_dim_hidden' : {
+        'values': [16,32,64,128,256]
+    },
     'embedding_dropout' : {
-        'min': 0.1,
-        'max': 0.9
+        'min': 0.3,
+        'max': 0.6
+    },
+    'prompt-trick': {
+        'values': [False]
     }
 }

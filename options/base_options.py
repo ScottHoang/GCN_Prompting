@@ -1,5 +1,5 @@
 import argparse
-MODELS = ['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN', 'VGAE']
+MODELS = ['GCN', 'GAT', 'SGC', 'GCNII', 'DAGNN', 'GPRGNN', 'APPNP', 'JKNet', 'DeeperGCN', 'VGAE', 'mlp']
 
 class BaseOptions():
 
@@ -79,6 +79,7 @@ class BaseOptions():
         # batch size for edge
         parser.add_argument('--batch-size', type=int, default=1024)
         # prompt parameters
+        parser.add_argument('--prompt-dim-hidden', type=int, default=64)
         parser.add_argument('--prompt-freq', type=int, default=1)
         parser.add_argument('--prompt-pretrain-type', type=str, default='edgeMask')
         parser.add_argument('--prompt-pretrain-lr', type=float, default=1e-3)
@@ -149,7 +150,7 @@ class BaseOptions():
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
-            # args.dim_hidden = 64
+            args.prompt_dim_hidden = 64
             args.activation = 'relu'
 
             # args.N_exp = 100
@@ -162,13 +163,8 @@ class BaseOptions():
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
-            # args.dim_hidden = 256
+            args.prompt_dim_hidden = 256
             args.activation = 'relu'
-            # edge task specific
-            # args.use_splitted = False
-            # # args.practical_neg_sample = True
-            # args.observe_val_and_injection = False
-            # args.init_attribute = False
 
         elif args.dataset == 'Citeseer':
             args.num_feats = 3703
@@ -180,7 +176,7 @@ class BaseOptions():
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
-            # args.dim_hidden = 256
+            args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
             args.res_alpha = 0.2
@@ -193,7 +189,7 @@ class BaseOptions():
             args.weight_decay = 0.
             # args.epochs = 1000
             # args.patience = 200
-            # args.dim_hidden = 256
+            args.prompt_dim_hidden = 256
 
         # ==============================================
         # ========== below are other datasets ==========
@@ -201,7 +197,7 @@ class BaseOptions():
         elif args.dataset == 'CoauthorPhysics':
             # args.epochs = 1000
             # args.patience = 100
-            # args.dim_hidden = 256
+            args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 8415
@@ -216,7 +212,7 @@ class BaseOptions():
         elif args.dataset == 'CoauthorCS':
             # args.epochs = 1000
             # args.patience = 100
-            # args.dim_hidden = 256
+            args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 6805
@@ -240,8 +236,6 @@ class BaseOptions():
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9
-
-
 
 
         elif args.dataset == 'WISCONSIN':
