@@ -25,16 +25,16 @@ parameters_dict = {
         'max':5.0,
     },
     'prompt_layer': {
-        'values': [3, 8, 16, 32],
+        'values': [1, 2],
     },
     'num_layers': {
-        'values': [1, 2, 3]
+        'values': [1, 2]
     },
     'prompt_head':{
-        'values' : ['GCN']
+        'values' : ['mlp', 'GCN', "SGC"]
     },
     'type_model':{
-        'values' : ['GCN', "SGC"]
+        'values' : ['mlp', 'GCN', "SGC"]
     },
     'prompt_aggr': {
         'values': ['concat', 'sum', 'mean', 'edges'],
@@ -47,9 +47,6 @@ parameters_dict = {
     },
     'prompt_type': {
         'values': ['micmap', 'micmip', 'macmip', 'macmap']
-    },
-    'alpha': {
-        'values': [0.6, 0.7, 0.8, 0.9]
     },
     'dim_hidden' : {
       'values': [16,32,64,128,256]

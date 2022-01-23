@@ -5,4 +5,6 @@ from .wisconsin_sweep_params import parameters_dict as WISCONSIN
 from .cora_sweep_params import parameters_dict as Cora
 from .citeseer_sweep_params import parameters_dict as Citeseer
 from .sweep_params import parameters_dict as DEFAULT_PARAM
-__all__ = ['ACTOR', 'CORNELL', 'TEXAS', 'WISCONSIN', 'Cora', 'Citeseer', 'DEFAULT_PARAM']
+from .pubmed_sweep_params import parameters_dict as Pubmed
+from .amazonComputers_sweep_params import parameters_dict as AmazonComputers
+__all__ = ['ACTOR', 'CORNELL', 'TEXAS', 'WISCONSIN', 'Cora', 'Citeseer', 'DEFAULT_PARAM', 'Pubmed', 'AmazonComputers']

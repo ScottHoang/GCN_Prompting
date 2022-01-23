@@ -213,7 +213,17 @@ class trainer(object):
                                                   self.data,
                                                   self.split_idx)
 
-            learner.model.distance = torch.load(f'data/{self.dataset}/distance.pth').to(self.data.x.device)
+            ######## the SP matrix:
+            distance = torch.load(f'data/{self.dataset}/distance.pth').float()
+            distance[distance.eq(510)] = -1
+            distance[distance.eq(-1)] = distance.max() + 1
+            distance.add_(
+                1.0)  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+            distance.fill_diagonal_(1)  # log(diag) = 0
+            distance.add_(distance.t())
+            distance.div_(2.0)
+            #####
+            learner.model.log_distance = torch.log(distance).div_(self.prompt_distance_temp).to(self.device)
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)

@@ -24,13 +24,17 @@ parameters_dict = {
         'min':0.1,
         'max':5.0,
     },
-    'prompt_neighbor_cutoff': {
-        'values': [-1, 3, 5]},
     'prompt_layer': {
-        'values': [2, 3],
+        'values': [1, 2, 3],
+    },
+    'num_layers': {
+        'values': [1, 2, 3]
     },
     'prompt_head':{
-        'values' : ['GCN', "SGC"]
+        'values' : ['mlp', 'GCN', "SGC"]
+    },
+    'type_model':{
+        'values' : ['mlp', 'GCN', "SGC"]
     },
     'prompt_aggr': {
         'values': ['concat', 'sum', 'mean', 'edges'],
@@ -44,9 +48,6 @@ parameters_dict = {
     'prompt_type': {
         'values': ['micmap', 'micmip', 'macmip', 'macmap']
     },
-    'alpha': {
-        'values': [0.6, 0.7, 0.8, 0.9]
-    },
     'dim_hidden' : {
       'values': [16,32,64,128,256]
     },
@@ -56,8 +57,5 @@ parameters_dict = {
     'embedding_dropout' : {
         'min': 0.3,
         'max': 0.6
-    },
-    'prompt-trick': {
-        'values': [False]
     }
 }

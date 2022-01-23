@@ -329,26 +329,17 @@ class TransNodeWrapper:
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
         #d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
+        score.fill_diagonal_(0)
         index = score.topk(self.prompt_k, dim=-1)[1]
         return index
 
     def _prep_micmapmacmip(self, x_src, x_tgt, num_nodes, edge_index):
-        distance = self.distance.clone()
-        if self.prompt_neighbor_cutoff > 0:
-            distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
-        else:
-            distance[distance.eq(510)] = 1
-        distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
-        distance.fill_diagonal_(1)  # log(diag) = 0
-        distance = (distance + distance.t()) / 2
-        log_distance = torch.log(distance) / self.prompt_distance_temp
-        #######
         adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
         adj.fill_diagonal_(0)
         #####
         sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
         mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
-        return log_distance, sim ,mean_sim
+        return self.log_distance, sim ,mean_sim
 
     def _prep_cdsp(self, x_src, x_tgt, num_nodes, edge_index):
         distance = self.distance.clone()
@@ -356,9 +347,9 @@ class TransNodeWrapper:
             distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
         else:
             distance[distance.eq(510)] = 1
-        distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+        distance.add_(1) # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
         distance.fill_diagonal_(1)  # log(diag) = 0
-        distance = (distance + distance.t()) / 2
+        distance.add_(distance.t()).div_(2)
         log_distance = torch.log(distance) / self.prompt_distance_temp
         #######
         adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)

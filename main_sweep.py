@@ -54,7 +54,7 @@ def sweep():
     parameters_dict = eval(f'{args.dataset}')
     sweep_config['parameters'] = parameters_dict
     sweep_id = wandb.sweep(sweep_config,
-                           project=f'sweep-{args.dataset}-9')
+                           project=f'sweep-{args.dataset}-final')
     wandb.agent(sweep_id, function=run_sweep)
 
 def run_sweep():

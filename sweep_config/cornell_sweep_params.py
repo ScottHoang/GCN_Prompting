@@ -24,12 +24,16 @@ parameters_dict = {
         'min':0.1,
         'max':5.0,
     },
-    'prompt_neighbor_cutoff': {
-        'values': [-1, 3, 5]},
     'prompt_layer': {
         'values': [3, 8, 16, 32],
     },
+    'num_layers': {
+        'values': [1, 2, 3]
+    },
     'prompt_head':{
+        'values' : ['GCN']
+    },
+    'type_model':{
         'values' : ['GCN', "SGC"]
     },
     'prompt_aggr': {
@@ -48,7 +52,7 @@ parameters_dict = {
         'values': [0.6, 0.7, 0.8, 0.9]
     },
     'dim_hidden' : {
-      'values': [16,32,64,128,256]
+      'values': [16,32,64]
     },
     'prompt_dim_hidden' : {
         'values': [16,32,64,128,256]
