@@ -146,7 +146,7 @@ class BaseOptions():
             args.num_feats = 1433
             args.num_classes = 7
             args.dropout = 0.6  # 0.5
-            args.lr = 0.005  # 0.005
+            # args.lr = 0.005  # 0.005
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
@@ -159,7 +159,7 @@ class BaseOptions():
             args.num_feats = 500
             args.num_classes = 3
             args.dropout = 0.5
-            args.lr = 0.01
+            # args.lr = 0.01
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
@@ -171,7 +171,7 @@ class BaseOptions():
             args.num_classes = 6
 
             args.dropout = 0.7
-            args.lr = 0.01
+            # args.lr = 0.01
             args.lamda = 0.6
             args.weight_decay = 5e-4
             # args.epochs = 1000
@@ -212,14 +212,14 @@ class BaseOptions():
         elif args.dataset == 'CoauthorCS':
             # args.epochs = 1000
             # args.patience = 100
-            args.prompt_dim_hidden = 256
+            # args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
             args.num_feats = 6805
             args.num_classes = 15
 
             args.dropout = 0.8
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 0.
 
         elif args.dataset == 'TEXAS':
@@ -232,7 +232,7 @@ class BaseOptions():
             args.num_classes = 5
 
             args.dropout = 0.6
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
             args.res_alpha = 0.9
@@ -295,7 +295,7 @@ class BaseOptions():
             args.num_classes = 10
 
             args.dropout = 0.5
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-5
 
         elif args.dataset == 'AmazonPhoto':
@@ -308,7 +308,7 @@ class BaseOptions():
             args.num_classes = 8
 
             args.dropout = 0.5
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 5e-4
 
         return self.prompt_mode_overwrite(args)
