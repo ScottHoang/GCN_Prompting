@@ -25,7 +25,7 @@ parameters_dict = {
         'max':5.0,
     },
     'prompt_layer': {
-        'values': [3, 8, 16, 32],
+        'values': [1,2,3],
     },
     'num_layers': {
         'values': [1, 2, 3]

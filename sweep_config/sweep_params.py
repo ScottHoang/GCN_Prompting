@@ -52,7 +52,7 @@ parameters_dict = {
         'values': [0.6, 0.7, 0.8, 0.9]
     },
     'dim_hidden' : {
-      'values': [16,32,64,128,256]
+      'values': [16,32,64]
     },
     'prompt_dim_hidden' : {
         'values': [16,32,64,128,256]

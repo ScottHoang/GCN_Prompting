@@ -33,7 +33,7 @@ parameters_dict = {
     'prompt_head':{
         'values' : ['GCN']
     },
-    'model_type':{
+    'type_model':{
         'values' : ['GCN', "SGC"]
     },
     'prompt_aggr': {

@@ -146,11 +146,7 @@ class BaseOptions():
             args.num_feats = 1433
             args.num_classes = 7
             args.dropout = 0.6  # 0.5
-            # args.lr = 0.005  # 0.005
             args.weight_decay = 5e-4
-            # args.epochs = 1000
-            # args.patience = 100
-            args.prompt_dim_hidden = 64
             args.activation = 'relu'
 
             # args.N_exp = 100
@@ -159,11 +155,7 @@ class BaseOptions():
             args.num_feats = 500
             args.num_classes = 3
             args.dropout = 0.5
-            # args.lr = 0.01
             args.weight_decay = 5e-4
-            # args.epochs = 1000
-            # args.patience = 100
-            args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
         elif args.dataset == 'Citeseer':
@@ -176,7 +168,7 @@ class BaseOptions():
             args.weight_decay = 5e-4
             # args.epochs = 1000
             # args.patience = 100
-            args.prompt_dim_hidden = 256
+            # args.prompt_dim_hidden = 256
             args.activation = 'relu'
 
             args.res_alpha = 0.2
@@ -185,11 +177,11 @@ class BaseOptions():
             args.num_feats = 128
             args.num_classes = 40
             args.dropout = 0.1
-            args.lr = 0.005
+            # args.lr = 0.005
             args.weight_decay = 0.
             # args.epochs = 1000
             # args.patience = 200
-            args.prompt_dim_hidden = 256
+            # args.prompt_dim_hidden = 256
 
         # ==============================================
         # ========== below are other datasets ==========

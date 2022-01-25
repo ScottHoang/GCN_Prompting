@@ -19,14 +19,14 @@ class VGAELearner(Learner):
     def task_train(self):
         data = self.data
         self.model.train()
-        adj = self.get_target_adj(self.data.train_pos)
+        adj = self.get_target_adj(self.data.train_pos_edge_index)
         norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
         pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
-        pred, mu, logvar = self.model(self.data.x, self.data.train_pos)
+        pred, mu, logvar = self.model(self.data.x, self.data.train_pos_edge_index)
         loss = loss_function(pred, adj, mu, logvar, self.data.x.size(0), norm ,pos_weight)
 
-        logits, labels = self.info_nce_loss(mu, data.train_pos[0], data.train_pos[1], data.train_neg[0],  data.train_neg[1], self.temp)
-        loss = loss + self.loss_fn(logits, labels)
+        # logits, labels = self.info_nce_loss(mu, data.train_pos_edge_index[0], data.train_pos_edge_index[1], data.train_neg_edge_index[0],  data.train_neg_edge_index[1], self.temp)
+        # loss = loss + self.loss_fn(logits, labels)
 
         self.model.optimizer.zero_grad()
         loss.backward()
@@ -43,17 +43,17 @@ class VGAELearner(Learner):
     @torch.no_grad()
     def task_test(self):
         self.model.eval()
-        pred, mu, _ = self.model(self.data.x, self.data.train_pos)
+        pred, mu, _ = self.model(self.data.x, self.data.train_pos_edge_index)
         pred = torch.sigmoid(pred)
-        val_pred_pos = pred[self.data.val_pos[0], self.data.val_pos[1]]
-        val_pred_neg = pred[self.data.val_neg[0], self.data.val_neg[1]]
+        val_pred_pos = pred[self.data.val_pos_edge_index[0], self.data.val_pos_edge_index[1]]
+        val_pred_neg = pred[self.data.val_neg_edge_index[0], self.data.val_neg_edge_index[1]]
         val_pred = torch.cat([val_pred_pos, val_pred_neg], dim=0).squeeze(-1).cpu()
         val_labels = torch.cat([torch.ones(val_pred_pos.shape), torch.zeros(val_pred_neg.shape)]).squeeze(-1).cpu()
         val_roc_auc = roc_auc_score(val_labels, val_pred)
         val_ap = average_precision_score(val_labels, val_pred)
 
-        test_pred_pos = pred[self.data.test_pos[0], self.data.test_pos[1]]
-        test_pred_neg = pred[self.data.test_neg[0], self.data.test_neg[1]]
+        test_pred_pos = pred[self.data.test_pos_edge_index[0], self.data.test_pos_edge_index[1]]
+        test_pred_neg = pred[self.data.test_neg_edge_index[0], self.data.test_neg_edge_index[1]]
         test_pred = torch.cat([test_pred_pos, test_pred_neg], dim=0).squeeze(-1).cpu()
         test_labels = torch.cat([torch.ones(test_pred_pos.shape), torch.zeros(test_pred_neg.shape)]).squeeze(-1).cpu()
         test_roc_auc = roc_auc_score(test_labels, test_pred)
