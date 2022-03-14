@@ -46,7 +46,7 @@ class GCN(nn.Module):
             self.layers_bn.append(torch.nn.BatchNorm1d(self.dim_hidden))
         elif self.type_norm == 'pair':
             self.layers_bn.append(pair_norm())
-
+        self.prompt = None
         self.optimizer = torch.optim.Adam(self.parameters(),
                                           lr=self.lr, weight_decay=self.weight_decay)
 
@@ -60,7 +60,7 @@ class GCN(nn.Module):
             if self.type_norm in ['batch', 'pair']:
                 x = self.layers_bn[i](x)
             x = F.relu(x)
-
+        self.node_embs = self.final_embs = x
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.layers_GCN[-1](x, edge_index)
         return x

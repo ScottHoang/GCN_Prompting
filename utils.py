@@ -3,6 +3,7 @@ import random
 from warnings import warn
 
 import torch as th
+import torch_geometric.utils
 import yaml
 from texttable import Texttable
 from torch_geometric.data import Data
@@ -633,6 +634,7 @@ def MAD(emb_src, mask=None, mean=True, emb_tgt=None):
     dtgt = torch.mul(dij, mask)
     if mean:
         dtgt_norm = dtgt.sum(dim=-1) / mask.sum(dim=-1)
+        dtgt_norm[dtgt_norm!=dtgt_norm] = 0
         return dtgt_norm.mean().item()
     else:
         return dtgt
@@ -640,12 +642,13 @@ def MAD(emb_src, mask=None, mean=True, emb_tgt=None):
 
 @torch.no_grad()
 def I2NR(edges, labels, hops=2):
-    # edges = to_undirected(edges)
     i2nr = []
-    nodes = set(edges.reshape(-1).cpu().tolist())
+    # nodes = set(edges.reshape(-1).cpu().tolist())
+    nodes = torch.arange(labels.size(0))
     for node in nodes:
         node_label = labels[node]
-        subset, k_edges, _, _, = k_hop_subgraph(node, hops, edges)
+        subset, _, _, mask, = k_hop_subgraph(node.unsqueeze(0), hops, edges)
+        k_edges = edges[:, mask]
         source_labels = labels[k_edges[0, :]]
         target_labels = labels[k_edges[1, :]]
         like_edges = source_labels.eq(target_labels)

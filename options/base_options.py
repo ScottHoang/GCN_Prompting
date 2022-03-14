@@ -331,5 +331,12 @@ class BaseOptions():
             raw, continual = settings[4].split('-')
             args.prompt_raw = raw == 'r'
             args.prompt_continual = continual == 'c'
+        else:
+            # construct the prompt mode
+            if args.task != 'dt':
+                args.prompt_mode = f'{args.type_model}.{args.num_layers}.{args.task}'
+            else:
+                cont = 'c' if args.prompt_continual else 's'
+                args.prompt_mode = f"{args.type_model}-{args.prompt_head}.{args.num_layers}-{args.prompt_layer}.{args.prompt_k}-x-{args.prompt_aggr}.{args.prompt_type}.l-{cont}"
         return args
 

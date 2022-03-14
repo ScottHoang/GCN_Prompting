@@ -55,7 +55,7 @@ def read_files(paths):
 
 
 def generate_scatter_plots(labels, coordinates_lists, prompts, lr, test_acc, edge_index,
-                           n_frames=20, marker_size=10, bg_color='#95A4AD'):
+                           sel_labels=[], n_frames=20, marker_size=20, bg_color='#95A4AD'):
     global colors
     filenames = []
     xmin_avg, xmax_avg, ymin_avg, ymax_avg = [], [],[],[]
@@ -72,14 +72,14 @@ def generate_scatter_plots(labels, coordinates_lists, prompts, lr, test_acc, edg
     xmax = np.average(xmax_avg) + offset
     ymin = np.average(ymin_avg) - offset
     ymax = np.average(ymax_avg) + offset
-
+    if len(sel_labels) == 0:
+        sel_labels = np.unique(labels)
     for index in np.arange(0, len(coordinates_lists) - 1):
         # get current and next coordinates
         x = coordinates_lists[index][0]
         y = coordinates_lists[index][1]
         x1 = coordinates_lists[index + 1][0]
         y1 = coordinates_lists[index + 1][1]
-        prompt = prompts[index]
 
         while len(x) < len(x1):
             diff = len(x1) - len(x)
@@ -101,23 +101,24 @@ def generate_scatter_plots(labels, coordinates_lists, prompts, lr, test_acc, edg
             # plot
             fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(aspect="equal"))
             ax.set_facecolor(bg_color)
-            for src, tgt in edge_index.transpose():
-                plt.plot(x_temp[[src,tgt]], y_temp[[src,tgt]], linewidth=1, alpha=0.25, c='gainsboro')
-            upscale = [1 for _ in range(x_temp.shape[0])]
-            if prompt is not None:
-                for src, tgts in enumerate(prompt):
-                    if tgts is None:
-                        break
-                    else:
-                        for tgt in tgts:
-                            if src == tgt: continue
-                            else:
-                                upscale[tgt] += 1
-            scale = np.array([marker_size*2**np.log(n) for n in upscale])
+            # for src, tgt in edge_index.transpose():
+            #     plt.plot(x_temp[[src,tgt]], y_temp[[src,tgt]], linewidth=1, alpha=0.25, c='gainsboro')
+            # upscale = [1 for _ in range(x_temp.shape[0])]
+            # if prompt is not None:
+            #     for src, tgts in enumerate(prompt):
+            #         if tgts is None:
+            #             break
+            #         else:
+            #             for tgt in tgts:
+            #                 if src == tgt: continue
+            #                 else:
+            #                     upscale[tgt] += 1
+            # scale = np.array([marker_size*2**np.log(n) for n in upscale])
             for g in np.unique(labels):
-                ix = np.where(labels==g)
-                plt.scatter(x_temp[ix], y_temp[ix], c=colors[g], s=scale[ix], label=g)
-            plt.title(f'training at epoch: {i+index*n_frames}, lr: {lr[index]:.3f}, acc: {test_acc[index]*100:.2f}')
+                if g in sel_labels:
+                    ix = np.where(labels==g)
+                    plt.scatter(x_temp[ix], y_temp[ix], c=colors[g], s=marker_size, label=g)
+            plt.title(f'Node Prediction')#training at epoch: {i+index*n_frames}, lr: {lr[index]:.3f}, acc: {test_acc[index]*100:.2f}')
             plt.legend()
             plt.xlim(xmin, xmax)
             plt.ylim(ymin, ymax)
@@ -148,15 +149,19 @@ def create_gif(filenames, gif_name):
     print('gif complete\n')
     print('Removing Images\n')
     # Remove files
+    if not os.path.isdir(gif_name):
+        os.makedirs(gif_name)
     for filename in set(filenames):
-        os.remove(filename)
+        os.rename(filename, os.path.join(gif_name, os.path.basename(filename)))
+        # os.remove(filename)
     print('done')
 
 
 
 if __name__ == "__main__":
-    _, dst, dataset = sys.argv
+    _, dst, dataset, = sys.argv
     root = 'embeddings'
+    sel_labels = [0, 4]
     if not os.path.isdir(temp_root):
         os.makedirs(temp_root)
     if not os.path.isdir(dst):
@@ -179,7 +184,7 @@ if __name__ == "__main__":
             print(f"{gif_name} already processed")
             continue
         labels, coordinates, prompts, lrs, test_acc, edge_index= read_files(paths)
-        filenames = generate_scatter_plots(labels, coordinates, prompts, lrs, test_acc, edge_index)
+        filenames = generate_scatter_plots(labels, coordinates, prompts, lrs, test_acc, edge_index, sel_labels=sel_labels)
         create_gif(filenames, gif_name)
 
     os.rmdir(temp_root)

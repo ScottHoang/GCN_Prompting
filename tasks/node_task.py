@@ -31,6 +31,7 @@ class NodeLearner(Learner):
             self.train_idx = self.split_idx['train'].to(self.data.x.device)
         else:
             self.evaluator = None
+
         if self.prompt_save_embs:
             self.root = root = os.path.join('embeddings', self.prompt_mode, self.dataset,
                                             datetime.now().strftime('%y-%m-%d||%H:%M')
@@ -102,8 +103,13 @@ class NodeLearner(Learner):
 
     def save_embs(self, node_embs, final_embs, prompts, results):
         if self.count % 20 == 0:
+            if hasattr(self.model, 'embeddings'):
+                opt = self.model.embeddings.optimizer
+            else:
+                opt = self.model.optimizer
+
             torch.save({'node_embs': node_embs, 'final_embs': final_embs, 'prompts': prompts, 'labels': self.data.y,
-                        'edges': self.data.edge_index, 'lr': self.model.embeddings.optimizer.param_groups[0]['lr'], 'results': results},
+                        'edges': self.data.edge_index, 'lr': opt.param_groups[0]['lr'], 'results': results},
                        os.path.join(self.root, f'embeddings_{self.count}.pth.tar'))
         self.count += 1
 

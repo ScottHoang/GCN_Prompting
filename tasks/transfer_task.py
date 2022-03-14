@@ -364,15 +364,15 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            distance = self.distance.clone()
-            if self.prompt_neighbor_cutoff > 0:
-                distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
-            else:
-                distance[distance.eq(510)] = 1
-            distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
-            distance.fill_diagonal_(1)  # log(diag) = 0
-            distance = (distance + distance.t()) / 2
-            log_distance = torch.log(distance / self.prompt_distance_temp)
+            # distance = self.distance.clone()
+            # if self.prompt_neighbor_cutoff > 0:
+            #     distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
+            # else:
+            #     distance[distance.eq(510)] = 1
+            # distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+            # distance.fill_diagonal_(1)  # log(diag) = 0
+            # distance = (distance + distance.t()) / 2
+            # log_distance = torch.log(distance)
             labels = F.log_softmax(self.node_predicted_labels, 1).argmax(dim=-1, keepdim=True)
             num_labels = self.data.y.max()
             avg_class_embs = torch.empty_like(x_src)
@@ -383,7 +383,7 @@ class TransNodeWrapper:
             adj.fill_diagonal_(0)
             sim = 1 - U.pair_cosine_similarity(avg_class_embs, x_tgt)  # cos distance ~ [0, 2]
             mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
-            return log_distance, sim, mean_sim, labels
+            return self.log_distance, sim, mean_sim, labels
 
     def get_bfs_prompts(self, x, x_tgt, num_nodes, edge_index):
         assert self.prompt_k > 0

@@ -94,6 +94,7 @@ class trainer(object):
             in_c += self.data.x.size(-1)
         return in_c
         # return self.data.x.size(-1)
+
     def init_pretrain(self):
         args = self.args
         edge_decoder = attr_decoder = None
@@ -172,6 +173,7 @@ class trainer(object):
             stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)
 
             return stats
+
         elif self.args.task in ['dt', 'dtvgae']:
             task = self.args.task
             ########################### pretrain
@@ -233,45 +235,11 @@ class trainer(object):
             if self.plot_info:
                 self.plot_figures(internal_stats, all_stats)
             return stats
-        elif self.args.task == 'nodebs':
-            task = self.args.task
-            self.args.task = 'edge'
-            # self.args.task = 'node'
-            self.set_dataloader()
-            # init predictor
-            self.args.task = task
-            self.node_predictor, optimizer_node = self.init_predictor_by_tasks('dt')
-            self.bfs_prompts = None
-            #
-            learner = create_nodeBaseLine_task(self.model, self.node_predictor, self.args.batch_size, self.data, self.dataset,
-                                               self.type_trick, self.split_idx)
-            # train /test fn init
-            train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
-            stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
-            return stats
-        elif self.args.task == 'vgae':
-            assert isinstance(self.model, VGAE)
-            learner = create_vgae_task(self.model, self.args.batch_size, self.data)
-            train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
-            stats = self.train_test_frame(train_fn, stats_fn=learner.stats)
-            return stats
-        elif self.args.task == 'prompt':
-            # pretrain
-            task = self.args.task
-            self.args.task = 'edge'
-            self.set_dataloader()
-            stat_fn = self.edge_stats
-            train_fn = lambda: self.sequential_run(self.run_trainSet, self.run_testSet)
-            pretrain_stats = self.train_test_frame(train_fn, stat_fn)
-            #########
-            self.args.task = task
-            self.loss_fn = torch.nn.functional.nll_loss
-            # self.set_dataloader()
-            self.prompt_candidates, self.node_embeddings, self.node_embeddings_grad = self.init_auto_prompt()
-            train_fn = lambda: self.sequential_run(self.prompt_search, self.prompt_test)
-            stat_fn = self.prompt_stats
-            prompt_stats = self.train_test_frame(train_fn, stat_fn)
-            return prompt_stats
+        else:
+            raise ValueError
+
+        if self.prompt_save_embs:
+            pass
 
     def train_test_frame(self, runs_fn, stats_fn, epochs=1000):
         best_stats = None
