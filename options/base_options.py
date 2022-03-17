@@ -22,6 +22,7 @@ class BaseOptions():
                             help="run in cuda mode")
         parser.add_argument('--cuda_num', type=int, default=0, help="GPU number")
         parser.add_argument('--log_file_name', type=str, default='time_and_memory.log')
+        parser.add_argument('--log_dir', type=str, default='output/')
 
         parser.add_argument('--compare_model', type=int, default=0,
                             help="0: test tricks, 1: test models")
@@ -88,10 +89,10 @@ class BaseOptions():
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-neighbor-cutoff', type=int, default=-1)
         parser.add_argument('--prompt-raw', action='store_true')
-        parser.add_argument('--prompt-continual', action='store_true')
+        parser.add_argument('--prompt-continual', type=bool, default=False)
         parser.add_argument('--prompt-temp', type=float, default=1.0)
         parser.add_argument('--prompt-distance-temp', type=float, default=1.0)
-        parser.add_argument('--prompt-aggr', type=str, default='concat', help='concat|sum|max|mean')
+        parser.add_argument('--prompt-aggr', type=str, default='concat', choices=['concat', 'sum' , 'max', 'mean', 'edges'])
         parser.add_argument('--prompt-head', type=str, default='mlp', help='mlp|gnn')
         parser.add_argument('--prompt-layer', type=int, default=2)
         parser.add_argument('--prompt-opt', type=str, default='head', help='both|head')

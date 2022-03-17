@@ -6,7 +6,7 @@ import torch
 
 from options.base_options import BaseOptions
 from trainer import trainer
-from utils import set_seed, print_args, overwrite_with_yaml
+from utils import set_seed, print_args, overwrite_with_yaml, logger_setup
 from collections import defaultdict
 
 
@@ -14,24 +14,19 @@ def main(args):
     overall_stats = defaultdict(list)
     if not os.path.isdir('embeddings'):
         os.mkdir('embeddings')
-    # list_test_acc = []
-    # list_valid_acc = []
-    # list_train_loss = []
     if args.compare_model:
         args = overwrite_with_yaml(args, args.type_model, args.dataset)
-    print_args(args)
+
+    os.makedirs(args.log_dir, exist_ok=True)
+    logger = logger_setup(args, args.log_dir)
+    print_args(args, logger)
     for seed in range(args.N_exp):
-        print(f'seed (which_run) = <{seed}>')
+        logger.info(f'seed (which_run) = <{seed}>')
         args.random_seed = seed
         set_seed(args)
         torch.cuda.empty_cache()
         trnr = trainer(args, seed)
         stats = trnr.train_and_test()
-        # if args.prompt_save_embs:
-        #     # pkgs.update({
-        #     # 'labels': trnr.data.y,
-        #     # 'edge_index': trnr.data.edge_index})
-        #     save_prompt_embs(trnr, args, seed, stats)
         for k, v in stats.items():
             overall_stats[k].append(v)
 
@@ -43,12 +38,12 @@ def main(args):
         msg = 'mean and std of all stats: '
         for k, v in overall_stats.items():
             msg = msg + f"{k}: {np.mean(v):.4f}:{np.std(v):.4f}, "
-        print(msg)
+        logger.info(msg)
 
     msg = f'final mean and std of test acc with <{args.N_exp}> runs:'
     for k, v in overall_stats.items():
         msg = msg + f"{k}: {np.mean(v):.4f}:{np.std(v):.4f}, "
-    print(msg)
+    logger.info(msg)
     return overall_stats
 
 def save_prompt_embs(trnr, args, seed, stats):

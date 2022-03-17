@@ -12,11 +12,13 @@ from utils import AcontainsB
 
 
 class TricksComb(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, model=None):
         super(TricksComb, self).__init__()
         self.args = args
         for k, v in vars(args).items():
             setattr(self, k, v)
+        if model is not None:
+            self.type_model = model
         # cannot cache graph structure when use graph dropout tricks
         self.cached = False #self.transductive = args.transductive
         if AcontainsB(self.type_trick, ['DropEdge', 'DropNode', 'FastGCN', 'LADIES']):

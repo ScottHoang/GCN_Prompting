@@ -15,6 +15,9 @@ from torch_geometric.datasets import Planetoid
 import torch.nn.functional as F
 import sys
 import os.path
+import logging
+from importlib import reload
+import time
 
 from sklearn.model_selection import StratifiedShuffleSplit
 from torch_geometric.utils import to_dense_adj
@@ -31,14 +34,35 @@ sys.path.append('%s/software/' % par_dir)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def print_args(args):
+
+def logger_setup(args, path: str, mode='INFO'):
+    time_str = time.asctime(time.localtime()).split(' ')
+    time_str = '-'.join(time_str)
+    name = f"{time_str}-{args.prompt_mode}-log.txt"
+    mode = getattr(logging, mode)
+    format = "%(levelname)s %(asctime)s - %(message)s"
+    logging.shutdown()
+    reload(logging)
+    logging.basicConfig(level=mode,
+                        format=format,
+                        handlers=[
+                            logging.FileHandler(os.path.join(path, name)),
+                            logging.StreamHandler()
+                        ])
+    return logging.getLogger()
+
+
+def print_args(args, logger=None):
     _dict = vars(args)
     _key = sorted(_dict.items(), key=lambda x: x[0])
     t = Texttable()
     t.add_row(["Parameter", "Value"])
     for k, _ in _key:
         t.add_row([k, _dict[k]])
-    print(t.draw())
+    if logger is not None:
+        logger.info(t.draw())
+    else:
+        print(t.draw())
 
 
 def set_seed(args):

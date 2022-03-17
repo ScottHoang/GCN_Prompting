@@ -31,7 +31,7 @@ from models import VGAE
 import matplotlib.pyplot as plt
 import time
 import datetime
-
+import logging
 BASIC = ['node', 'edge']
 DOMAIN = ['dt']
 VGAE = ['vgae']
@@ -47,6 +47,7 @@ class trainer(object):
     def __init__(self, args, which_run):
         for k, v in vars(args).items():
             setattr(self, k, v)
+        self.logger = logging.getLogger()
         self.args = args
         self.device = torch.device(f'cuda:{args.cuda_num}' if args.cuda else 'cpu')
         self.which_run = which_run
@@ -57,7 +58,7 @@ class trainer(object):
                                                 args.dropout, lr=0.0005, weight_decay=self.weight_decay).to(self.device)
             self.optimizer_edge = self.edge_predictor.optimizer
         if args.type_model != 'mlp':
-            if args.compare_model:  # only compare model
+            if args.compare_model or args.type_model == 'VGAE' :  # only compare model
                 Model = getattr(importlib.import_module("models"), self.type_model)
                 self.model = Model(args)
             else:  # compare tricks combinations
@@ -134,7 +135,7 @@ class trainer(object):
             if not self.prompt_trick:
                 node_predictor = Model(args).to(self.device)
             else:
-                node_predictor = TricksComb(args).to(self.device)
+                node_predictor = TricksComb(args, self.prompt_head).to(self.device)
             optimizer_node = node_predictor.optimizer
         return node_predictor, optimizer_node
 
@@ -259,9 +260,9 @@ class trainer(object):
                 log = f"Epoch: {epoch:03d}, "
                 for k, v in best_stats.items():
                     log = log + f"{k}: {v:.4f}, "
-                print(log)
+                self.logger.info(log)
         log = ''
-        print(log)
+        self.logger.info(log)
         return best_stats, all_stats
 
     @staticmethod
