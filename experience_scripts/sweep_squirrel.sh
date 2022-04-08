@@ -9,7 +9,7 @@ read -p "num_layers: " num_layers
 read -p "task: " task
 tasks="edgeMask contrastive attrMask VGAE"
 #tasks=['contrastive']
-datasets="chameleon ACTOR TEXAS WISCONSIN" #CORNELL AmazonComputers Citeseer Cora"
+datasets="squirrel" #chameleon ACTOR TEXAS WISCONSIN" #CORNELL AmazonComputers Citeseer Cora"
 
 declare -A dim_hidden=( ['squirrel']="64" ["chameleon"]="64" ['WISCONSIN']="64" ["CORNELL"]="32" ["ACTOR"]="16" ["TEXAS"]="16" ["Citeseer"]="16" ["Cora"]="16" ["AmazonComputers"]="16" )
 declare -A prompt_dim_hidden=( ["squirrel"]="128" ['chameleon']="128" ['WISCONSIN']="64" ["CORNELL"]="64" ["ACTOR"]="64" ["TEXAS"]="64" ["Citeseer"]="256" ["Cora"]="128" ["AmazonComputers"]="256" )
