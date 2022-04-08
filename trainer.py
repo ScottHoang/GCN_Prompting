@@ -121,23 +121,36 @@ class trainer(object):
         return model, edge_decoder, attr_decoder
 
     def init_predictor_by_type(self, type, in_c, args=None):
+        num_classes = self.num_classes
+        if self.downstream_task == 'edge':
+            num_classes = args.prompt_dim_hidden
+
         if type == 'mlp':
-            node_predictor = TaskPredictor(in_c, args.prompt_dim_hidden, self.num_classes, args.prompt_layer,
+            predictor = TaskPredictor(in_c, args.prompt_dim_hidden, num_classes, args.prompt_layer,
                                            args.dropout, lr=self.args.lr, weight_decay=self.weight_decay).to(self.device)
-            optimizer_node = node_predictor.optimizer
+            optimizer = predictor.optimizer
         else:
             Model = getattr(importlib.import_module("models"), self.prompt_head)
             #
             args.num_feats = in_c
             args.num_layers = self.args.prompt_layer
-            args.num_classes = self.num_classes
+            args.num_classes = num_classes
             args.dim_hidden = args.prompt_dim_hidden
             if not self.prompt_trick:
-                node_predictor = Model(args).to(self.device)
+                predictor = Model(args).to(self.device)
             else:
-                node_predictor = TricksComb(args, self.prompt_head).to(self.device)
-            optimizer_node = node_predictor.optimizer
-        return node_predictor, optimizer_node
+                predictor = TricksComb(args, self.prompt_head).to(self.device)
+            optimizer = predictor.optimizer
+
+        ####
+        if self.downstream_task == 'edge':
+            self.model = predictor
+            predictor = TaskPredictor(args.prompt_dim_hidden, args.prompt_dim_hidden, 1, 2,
+                                         args.dropout, lr=self.lr, weight_decay=self.weight_decay).to(self.device)
+            optimizer = predictor.optimizer
+
+
+        return predictor, optimizer
 
     def init_predictor_by_tasks(self, task):
         args = deepcopy(self.args)
@@ -206,15 +219,15 @@ class trainer(object):
                     embs = self.model(self.data.x, self.data.edge_index)
                     self.prompt_embs = Embeddings(embs.detach().clone(), self.data.x.clone(),
                                                   lr=self.prompt_lr, weight_decay=self.weight_decay, epochs=self.epochs)
-                self.node_predictor, optimizer_node = self.init_predictor_by_tasks(task)
+                self.predictor, optimizer  = self.init_predictor_by_tasks(task)
             else:
                 raise ValueError
 
             self.prompt_embs.to(self.device)
             init_fn = create_domain_transfer_task if task == 'dt' else create_vge_node_transfer_task
-            learner = init_fn(self.model, self.node_predictor, self.prompt_embs, self.args, task,
-                                                  self.data,
-                                                  self.split_idx)
+            learner = init_fn(self.model, self.predictor, self.prompt_embs, self.args, task,
+                              self.data,
+                              self.split_idx)
 
             ######## the SP matrix:
             distance = torch.load(f'data/{self.dataset}/distance.pth').float()
@@ -230,7 +243,7 @@ class trainer(object):
             # train /test fn init
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)
-            stats.update(pretrain_stats)
+            # stats.update(pretrain_stats)
 
             internal_stats = learner.model.stats
             if self.plot_info:

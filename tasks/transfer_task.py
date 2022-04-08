@@ -6,7 +6,7 @@ import random
 import torch_geometric
 
 import utils as U
-from .edge_task import EdgeLearner
+from .pretraining_task import PretrainLearner
 from .node_task import NodeLearner
 from utils import TaskPredictor
 import torch
@@ -17,6 +17,8 @@ from torch.nn.functional import dropout
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.utils as TGU
+
+
 class Att(nn.Module):
     def __init__(self, num_nodes, in_c, nhead=8, num_encoder=6, batch_first=True, dropout=0.5, lr=1e-3):
         super(Att, self).__init__()
@@ -54,7 +56,8 @@ class TransNodeWrapper:
 
         if self.prompt_aggr == 'att':
             in_c = self.embeddings.embs.size(1)
-            self.att_module = Att(self.data.x.size(0), in_c, self.att_head, self.att_num_layer, self.att_dropout, self.att_lr)
+            self.att_module = Att(self.data.x.size(0), in_c, self.att_head, self.att_num_layer, self.att_dropout,
+                                  self.att_lr)
             self.att_module.to(self.data.x.device)
 
         self.init_optimizer()
@@ -81,7 +84,7 @@ class TransNodeWrapper:
             emb_src = prompt_embs
         else:
             self.node_embs = self.embeddings.embs
-            emb_src =  F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
+            emb_src = F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
             emb_tgt = F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
         ############################################
         self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
@@ -91,6 +94,22 @@ class TransNodeWrapper:
             pred = self.predictor(self.final_embs, edge_index)
         if not self.training:
             self.node_predicted_labels = pred
+        return pred
+
+    def forward_edge(self, x, edge_index, source, target):
+        if self.prompt_raw:
+            prompt_embs = self.embeddings.embs_raw
+            self.node_embs = node_embs = self.embeddings.embs
+            emb_tgt = None
+            emb_src = prompt_embs
+        else:
+            self.node_embs = self.embeddings.embs
+            emb_src = F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
+            emb_tgt = F.dropout(self.embeddings.embs, self.embedding_dropout, training=self.training)
+        ############################################
+        self.final_embs, self.prompted_embs, x, edge_index = self.get_embs_edge_index(emb_src, emb_tgt, x, edge_index)
+        embs = self.model(self.final_embs, edge_index)
+        pred = self.predictor(embs[source], embs[target])
         return pred
 
     def get_embs_edge_index(self, emb_src, emb_tgt, x, edge_index):
@@ -110,7 +129,7 @@ class TransNodeWrapper:
         else:
             prompted_embs = emb_src
         if self.prompt_w_org_features:
-            final_embs = torch.cat([prompted_embs,x], dim=-1)
+            final_embs = torch.cat([prompted_embs, x], dim=-1)
         else:
             final_embs = prompted_embs
 
@@ -119,7 +138,7 @@ class TransNodeWrapper:
     def train(self):
         self._cache = True
         self.predictor.train()
-        self.model.eval()
+        self.model.train()
         self.training = True
         if hasattr(self, 'att_module'):
             self.att_module.train()
@@ -149,7 +168,8 @@ class TransNodeWrapper:
             embs = self.att_module(embs)
         elif pmode == 'edges':
             assert edge_index is not None
-            src = torch.arange(prompts_idx.size(0)).tile(dims=(self.prompt_k,1)).t().reshape(1, -1).to(edge_index.device)
+            src = torch.arange(prompts_idx.size(0)).tile(dims=(self.prompt_k, 1)).t().reshape(1, -1).to(
+                edge_index.device)
             tgt = prompts_idx.reshape(1, -1).to(edge_index.device)
             prompt_edge_index = torch.cat([src, tgt], dim=0).to(edge_index.device)
             edge_index = torch.cat([edge_index, prompt_edge_index], dim=-1)
@@ -162,10 +182,10 @@ class TransNodeWrapper:
     def get_prompt(self, x_src, x_tgt, num_nodes, edge_index):
         self.index = getattr(self, f"get_{self.prompt_type}_prompts")(x_src, x_tgt, num_nodes, edge_index)
         return self.index
-    
+
     def analyze_prompt(self, src, tgt, index):
         self.cos_distance = MAD(src, torch.ones(src.size(0), src.size(0)).to(src.device),
-                                    mean=False, emb_tgt=tgt)
+                                mean=False, emb_tgt=tgt)
         tgt = src if tgt is None else tgt
         mean_distances = []
         mean_i2nr = []
@@ -271,7 +291,7 @@ class TransNodeWrapper:
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            _, sim, _ , _= self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
+            _, sim, _, _ = self._prep_class_sim(x_src, x_tgt, num_nodes, edge_index)
             sim_inv = sim.mul(-1)
             index = sim_inv.topk(self.prompt_k, dim=-1)[1]
             return index
@@ -305,7 +325,7 @@ class TransNodeWrapper:
 
     def get_micmap_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
-        #d#####
+        # d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)) * log_distance
         score.fill_diagonal_(0)
         index = score.topk(self.prompt_k, dim=-1)[1]
@@ -327,7 +347,7 @@ class TransNodeWrapper:
 
     def get_micmip_prompts(self, x_src, x_tgt, num_nodes, edge_index):
         log_distance, sim, mean_sim = self._prep_micmapmacmip(x_src, x_tgt, num_nodes, edge_index)
-        #d#####
+        # d#####
         score = torch.exp(sim.sub(mean_sim).div(self.prompt_temp).mul(-1)).div(log_distance)
         score.fill_diagonal_(0)
         index = score.topk(self.prompt_k, dim=-1)[1]
@@ -339,7 +359,7 @@ class TransNodeWrapper:
         #####
         sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
         mean_sim = sim.mul(adj).sum(dim=-1).div(adj.sum(dim=-1).clamp(1e-8))
-        return self.log_distance, sim ,mean_sim
+        return self.log_distance, sim, mean_sim
 
     def _prep_cdsp(self, x_src, x_tgt, num_nodes, edge_index):
         distance = self.distance.clone()
@@ -347,7 +367,8 @@ class TransNodeWrapper:
             distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
         else:
             distance[distance.eq(510)] = 1
-        distance.add_(1) # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
+        distance.add_(
+            1)  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
         distance.fill_diagonal_(1)  # log(diag) = 0
         distance.add_(distance.t()).div_(2)
         log_distance = torch.log(distance) / self.prompt_distance_temp
@@ -356,27 +377,18 @@ class TransNodeWrapper:
         adj.fill_diagonal_(0)
         #####
         sim = 1 - U.pair_cosine_similarity(x_src, x_tgt)  # cos distance ~ [0, 2]
-        logexpsim = torch.log(torch.exp(sim/self.prompt_temp))
-        logexpmeansim = torch.logsumexp(sim/self.prompt_temp, dim=-1, keepdim=True)
+        logexpsim = torch.log(torch.exp(sim / self.prompt_temp))
+        logexpmeansim = torch.logsumexp(sim / self.prompt_temp, dim=-1, keepdim=True)
         return log_distance, logexpsim, logexpmeansim
 
     def _prep_class_sim(self, x_src, x_tgt, num_nodes, edge_index):
         if self.node_predicted_labels is None:
             return self.get_random_prompts(x_src, x_tgt, num_nodes, edge_index)
         else:
-            # distance = self.distance.clone()
-            # if self.prompt_neighbor_cutoff > 0:
-            #     distance[distance.gt(self.prompt_neighbor_cutoff)] = 1
-            # else:
-            #     distance[distance.eq(510)] = 1
-            # distance = distance + 1  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
-            # distance.fill_diagonal_(1)  # log(diag) = 0
-            # distance = (distance + distance.t()) / 2
-            # log_distance = torch.log(distance)
             labels = F.log_softmax(self.node_predicted_labels, 1).argmax(dim=-1, keepdim=True)
             num_labels = self.data.y.max()
             avg_class_embs = torch.empty_like(x_src)
-            for i in range(num_labels+1):
+            for i in range(num_labels + 1):
                 class_idx = labels.eq(i).squeeze()
                 avg_class_embs[class_idx] = x_src[class_idx].mean(dim=0)
             adj = torch_geometric.utils.to_dense_adj(edge_index).squeeze(0)
@@ -401,8 +413,8 @@ class TransNodeWrapper:
         return all_prompts
 
     def bfs(self, node, target, edge_index):
-        prompt=set([])
-        queue=[node]
+        prompt = set([])
+        queue = [node]
         seen = set()
 
         while queue:
@@ -413,9 +425,9 @@ class TransNodeWrapper:
                 for n in neighbors:
                     prompt.add(n)
                     queue.append(n)
-                    if len(prompt) == target*3:
+                    if len(prompt) == target * 3:
                         break
-            if len(prompt) == target*3:
+            if len(prompt) == target * 3:
                 break
             seen.add(s)
         if len(prompt) > target:
@@ -423,9 +435,24 @@ class TransNodeWrapper:
         return list(prompt)
 
     def record_stats(self, stats):
-        for k ,v in stats:
+        for k, v in stats:
             self.stats[k].append(v)
 
+    def optimizers_zero_grad(self):
+        self.model.optimizer.zero_grad()
+        self.predictor.optimizer.zero_grad()
+
+    def optimizers_step(self):
+        self.model.optimizer.step()
+        self.predictor.optimizer.step()
+
+
 def create_domain_transfer_task(model, predictor, embeddings, args, task, data, split_idx):
-    wrap = TransNodeWrapper(model, predictor, embeddings, args, task, data)
-    return NodeLearner(args, wrap, args.batch_size, data, args.dataset, args.type_trick, split_idx)
+    if args.downstream_task == 'node':
+        wrap = TransNodeWrapper(model, predictor, embeddings, args, task, data)
+        return NodeLearner(args, wrap, args.batch_size, data, args.dataset, args.type_trick, split_idx)
+    elif args.downstream_task == 'edge':
+        wrap = TransNodeWrapper(model, predictor, embeddings, args, task, data)
+        learner = PretrainLearner(wrap, args, args.batch_size, data, None)
+        learner.prompt_pretrain_type = "edgeMask"
+        return learner

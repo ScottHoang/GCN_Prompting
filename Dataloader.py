@@ -8,6 +8,7 @@ import torch_geometric.transforms as T
 import torch_geometric.utils as U
 from ogb.nodeproppred import PygNodePropPredDataset
 from torch_geometric.datasets import Planetoid, Coauthor, WebKB, Actor, Amazon
+from torch_geometric.datasets.wikipedia_network import WikipediaNetwork
 from torch_geometric.utils import remove_self_loops, add_self_loops, to_undirected, to_networkx
 from utils import *
 
@@ -86,6 +87,8 @@ def change_split(data, dataset, which_split=0):
         data = manual_split_WebKB_Actor(data, which_split)
     elif dataset == "ACTOR":
         data = manual_split_WebKB_Actor(data, which_split)
+    elif dataset in ['chameleon', 'squirrel']:
+        data = manual_split_WebKB_Actor(data, which_split)
     else:
         data = data
     data.y = data.y.long()
@@ -118,7 +121,9 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
     elif dataset == "ACTOR":
         data = Actor(path, transform=norm)[0]
         data = change_split(data, dataset, which_split=int(which_run // 10))
-
+    elif dataset in ['chameleon', 'squirrel']:
+        data = WikipediaNetwork(path, dataset, transform=norm)[0]
+        data = change_split(data, dataset, which_split=int(which_run//10))
     else:
         raise Exception(f'the dataset of {dataset} has not been implemented')
 

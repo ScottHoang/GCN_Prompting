@@ -8,12 +8,12 @@ class BaseOptions():
 
     def initialize(self):
         parser = argparse.ArgumentParser(description='Constrained learing')
-
+        parser.add_argument('--downstream-task', type=str, default='node')
         parser.add_argument("--dataset", type=str, default="Cora", required=False,
                             help="The input dataset.",
                             choices=['Cora', 'Citeseer', 'Pubmed', 'ogbn-arxiv',
                                      'CoauthorCS', 'CoauthorPhysics', 'AmazonComputers', 'AmazonPhoto',
-                                     'TEXAS', 'WISCONSIN', 'ACTOR', 'CORNELL'])
+                                     'TEXAS', 'WISCONSIN', 'ACTOR', 'CORNELL', 'squirrel', 'chameleon'])
         # build up the common parameter
         parser.add_argument('--random_seed', type=int, default=100)
         parser.add_argument('--N_exp', type=int, default=100)
@@ -143,15 +143,24 @@ class BaseOptions():
 
     ## setting the common hyperparameters used for comparing different methods of a trick
     def reset_dataset_dependent_parameters(self, args):
-        if args.dataset == 'Cora':
+        if args.dataset == 'chameleon':
+            args.num_feats = 2325
+            args.num_classes = 5
+            args.dropout = 0.6  # 0.5
+            args.weight_decay = 5e-4
+            args.activation = 'relu'
+        elif args.dataset == 'squirrel':
+            args.num_feats = 2089
+            args.num_classes = 5
+            args.dropout = 0.6  # 0.5
+            args.weight_decay = 5e-4
+            args.activation = 'relu'
+        elif args.dataset == 'Cora':
             args.num_feats = 1433
             args.num_classes = 7
             args.dropout = 0.6  # 0.5
             args.weight_decay = 5e-4
             args.activation = 'relu'
-
-            # args.N_exp = 100
-
         elif args.dataset == 'Pubmed':
             args.num_feats = 500
             args.num_classes = 3

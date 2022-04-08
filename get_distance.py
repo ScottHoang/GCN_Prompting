@@ -5,17 +5,18 @@ import torch
 import os
 
 if __name__ == "__main__":
-    choices = ['ACTOR',
-'TEXAS',
-'WISCONSIN',
-'CORNELL',
-'AmazonComputers',
-'Citeseer',
-'CoauthorCS',
-'AmazonPhoto',
-'Pubmed',
-'Cora',
-'CoauthorPyhysics']
+#     choices = ['ACTOR',
+# 'TEXAS',
+# 'WISCONSIN',
+# 'CORNELL',
+# 'AmazonComputers',
+# 'Citeseer',
+# 'CoauthorCS',
+# 'AmazonPhoto',
+# 'Pubmed',
+# 'Cora',
+# 'CoauthorPyhysics']
+    choices = ['chameleon']
     root = 'data/'
 
     for choice in tqdm(choices):
