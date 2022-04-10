@@ -691,6 +691,7 @@ def pair_cosine_similarity(x, y, eps=1e-8):
 
 def shortest_path(num_nodes, edge_index):
     adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()
+    import pdb; pdb.set_trace()
     distance, path = algos.floyd_warshall(adj)
     return torch.tensor(distance).to(edge_index.device)
 

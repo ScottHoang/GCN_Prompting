@@ -25,7 +25,7 @@ if __name__ == "__main__":
                     for line in file:
                         pass
                     if 'final' in line: # last line
-                        line = [l.strip(" ") for l in line.strip().split(',')[2::] if l != '' and 'acc' in l]
+                        line = [l.strip(" ") for l in line.strip().split(',')[2::] if l != '' and 'acc' in l or 'roc_auc' in l]
                         for l in line:
                             name, number = l.split(' ')
                             name = name.split("_")[0]

@@ -181,7 +181,17 @@ class trainer(object):
                 learner = create_node_task(self.args, self.model, self.args.batch_size, self.data, self.dataset, self.type_trick,
                                            self.split_idx)
             else:
-                learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data)
+                self.args.task = 'edge'
+                self.set_dataloader()
+                if self.type_model == 'VGAE':
+                    learner = create_vgae_task(self.model, self.args.batch_size, self.data, self.prompt_temp)
+                else:
+                    model, edge_decoder, attr_decoder = self.init_pretrain()
+                    self.model = model
+                    learner = create_pretrain_task(self.model, self.batch_size, self.data, self.args, 1.0,
+                                                            edge_predictor=edge_decoder,
+                                                            attr_predictor=attr_decoder)
+                    # edge_learner = create_edge_task(self.model, self.edge_predictor, self.args.batch_size, self.data, self.prompt_temp)
 
             train_fn = lambda: self.sequential_run(learner.task_train, learner.task_test)
             stats, all_stats = self.train_test_frame(train_fn, stats_fn=learner.stats, epochs=self.epochs)
@@ -218,7 +228,8 @@ class trainer(object):
                 else:
                     embs = self.model(self.data.x, self.data.edge_index)
                     self.prompt_embs = Embeddings(embs.detach().clone(), self.data.x.clone(),
-                                                  lr=self.prompt_lr, weight_decay=self.weight_decay, epochs=self.epochs)
+                                                  lr=self.prompt_lr, weight_decay=self.weight_decay, epochs=self.epochs,
+                                                  )
                 self.predictor, optimizer  = self.init_predictor_by_tasks(task)
             else:
                 raise ValueError

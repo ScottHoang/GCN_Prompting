@@ -89,6 +89,8 @@ def change_split(data, dataset, which_split=0):
         data = manual_split_WebKB_Actor(data, which_split)
     elif dataset in ['chameleon', 'squirrel']:
         data = manual_split_WebKB_Actor(data, which_split)
+    elif dataset == 'crocodile':
+        data = random_coauthor_amazon_splits(data)
     else:
         data = data
     data.y = data.y.long()
@@ -124,6 +126,9 @@ def load_data(dataset, which_run, norm=T.NormalizeFeatures()):
     elif dataset in ['chameleon', 'squirrel']:
         data = WikipediaNetwork(path, dataset, transform=norm)[0]
         data = change_split(data, dataset, which_split=int(which_run//10))
+    elif dataset == 'crocodile':
+        data = WikipediaNetwork(path, dataset, geom_gcn_preprocess=False, transform=norm)[0]
+        data = change_split(data, dataset, which_split=int(which_run // 10))
     else:
         raise Exception(f'the dataset of {dataset} has not been implemented')
 

@@ -9,7 +9,7 @@ read -p "num_layers: " num_layers
 read -p "task: " task
 tasks="edgeMask contrastive attrMask VGAE"
 #tasks=['contrastive']
-datasets="squirrel" #chameleon ACTOR TEXAS WISCONSIN" #CORNELL AmazonComputers Citeseer Cora"
+datasets="chameleon squirrel ACTOR TEXAS WISCONSIN" #CORNELL AmazonComputers Citeseer Cora"
 
 declare -A dim_hidden=( ['squirrel']="64" ["chameleon"]="64" ['WISCONSIN']="64" ["CORNELL"]="32" ["ACTOR"]="16" ["TEXAS"]="16" ["Citeseer"]="16" ["Cora"]="16" ["AmazonComputers"]="16" )
 declare -A prompt_dim_hidden=( ["squirrel"]="128" ['chameleon']="128" ['WISCONSIN']="64" ["CORNELL"]="64" ["ACTOR"]="64" ["TEXAS"]="64" ["Citeseer"]="256" ["Cora"]="128" ["AmazonComputers"]="256" )
@@ -38,6 +38,11 @@ for val in $tasks; do
           epochs="1000"
         fi
 
+        org_fea='True'
+        if [ "$prompt_k" = "0" ]; then
+          org_fea='False'
+        fi
+
         wait; python main.py --cuda_num="$CUDA" --compare_model="$trick" \
         --dataset "$dataset" \
         --prompt-dim-hidden "${prompt_dim_hidden[$dataset]}"\
@@ -58,10 +63,11 @@ for val in $tasks; do
         --prompt-temp 2.0\
         --prompt-type macmip \
         --type_model "$type_model" \
-        --N_exp 100  \
+        --N_exp 10  \
         --log_dir "$dir/$dataset/$m/$val" \
         --prompt-continual "${cont[$dataset]}" \
-        --downstream-task "$task"
+        --downstream-task "$task" \
+        --task "$task"
 
         done
     done

@@ -60,12 +60,12 @@ class LinearLR(torch.optim.lr_scheduler._LRScheduler):
                 for base_lr in self.base_lrs]
 
 class Embeddings(nn.Module):
-    def __init__(self, embs, raw, lr, weight_decay, prompt_size=5, init_as_zero=False, epochs=100):
+    def __init__(self, embs, raw, lr, weight_decay, prompt_size=5, init_as_zero=False, epochs=100, requires_grad=True):
         super().__init__()
         self.lr = lr
         self.static_embs = embs
-        self.embs = nn.Parameter(embs.clone(), requires_grad=True)
-        self.embs_raw = nn.Parameter(raw.clone(), requires_grad=True)
+        self.embs = nn.Parameter(embs.clone(), requires_grad=requires_grad)
+        self.embs_raw = nn.Parameter(raw.clone(), requires_grad=requires_grad)
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=weight_decay)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100, eta_min=0.0)
         # self.scheduler = LinearLR(self.optimizer, start_factor=0.5, total_iters=epochs)
