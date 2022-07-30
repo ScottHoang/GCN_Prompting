@@ -25,7 +25,7 @@ import numpy as np
 import pyximport
 
 pyximport.install(setup_args={"include_dirs": np.get_include()})
-import algos
+import algos_floyd
 
 cur_dir = os.path.dirname(os.path.realpath(__file__))
 par_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -691,8 +691,7 @@ def pair_cosine_similarity(x, y, eps=1e-8):
 
 def shortest_path(num_nodes, edge_index):
     adj = to_dense_adj(edge_index).squeeze(0).type(torch.int64).cpu().numpy()
-    import pdb; pdb.set_trace()
-    distance, path = algos.floyd_warshall(adj)
+    distance, path = algos_floyd.floyd_warshall(adj)
     return torch.tensor(distance).to(edge_index.device)
 
 def AcontainsB(A, listB):
