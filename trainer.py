@@ -1,37 +1,42 @@
 import collections
+import datetime
 import importlib
+import logging
 import os
 import random
-import numpy as np
+import time
+from copy import deepcopy
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
-from torch.utils.data.dataloader import DataLoader
 import torch.nn.functional as F
 from ogb.nodeproppred import Evaluator
+from sklearn.metrics import average_precision_score
+from sklearn.metrics import roc_auc_score
+from torch.utils.data.dataloader import DataLoader
+from torch_geometric.data import GraphSAINTNodeSampler
+from torch_geometric.data import GraphSAINTRandomWalkSampler
 
 import utils
-from Dataloader import load_data, load_ogbn, prepare_data
-from tricks import TricksComb  # TricksCombSGC
-from utils import AcontainsB
-from utils import TaskPredictor
-from utils import shortest_path
-from utils import CompoundOptimizers
-from utils import StratifiedSampler
-from sklearn.metrics import roc_auc_score, average_precision_score
-from torch_geometric.data import GraphSAINTRandomWalkSampler, GraphSAINTNodeSampler
-from copy import deepcopy
+from Dataloader import load_data
+from Dataloader import load_ogbn
+from Dataloader import prepare_data
+from models import VGAE
 from prompt.prompt import *
+from tasks.baseline_node_task import create_node_task as create_nodeBaseLine_task
 from tasks.edge_task import create_edge_task
 from tasks.node_task import create_node_task
-from tasks.transfer_task import create_domain_transfer_task
-from tasks.baseline_node_task import create_node_task as create_nodeBaseLine_task
-from tasks.vgae_task import create_vgae_task, create_vge_node_transfer_task
 from tasks.pretraining_task import create_pretrain_task
-from models import VGAE
-import matplotlib.pyplot as plt
-import time
-import datetime
-import logging
+from tasks.transfer_task import create_domain_transfer_task
+from tasks.vgae_task import create_vgae_task
+from tasks.vgae_task import create_vge_node_transfer_task
+from tricks import TricksComb  # TricksCombSGC
+from utils import AcontainsB
+from utils import CompoundOptimizers
+from utils import shortest_path
+from utils import StratifiedSampler
+from utils import TaskPredictor
 BASIC = ['node', 'edge']
 DOMAIN = ['dt']
 VGAE = ['vgae']
@@ -247,8 +252,7 @@ class trainer(object):
             distance.add_(
                 1.0)  # avoid log(1) = 0, instead log(2) = 0.69 is good for punishing node outside of desired range, while not excluding them completely.
             distance.fill_diagonal_(1)  # log(diag) = 0
-            distance.add_(distance.t())
-            distance.div_(2.0)
+            # distance.add_(distance.clone().t())
             #####
             learner.model.log_distance = torch.log(distance).div_(self.prompt_distance_temp).to(self.device)
             # train /test fn init
@@ -358,12 +362,3 @@ class trainer(object):
 
         plt.savefig(os.path.join(root, 'img.png'))
         torch.save({'distance': distances, 'stats': stats}, os.path.join(root, 'data.pth'))
-
-
-
-
-
-
-
-
-

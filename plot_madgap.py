@@ -1,13 +1,14 @@
 import collections
 import os
+import os.path as osp
 import sys
+
 import matplotlib.pyplot as plt
 import torch
 import torch_geometric.utils as tu
-import os.path as osp
-from utils import MAD
+
 from utils import I2NR
-import torch
+from utils import MAD
 
 res = 20
 DATASETS = ["ACTOR", "TEXAS", "WISCONSIN",
@@ -77,7 +78,7 @@ if __name__ == "__main__":
                 #     print(model, dataset, i2nr_edge, i2nr_prompt)
     #
     # print(bar_data)
-    keys = ['TEXAS', 'WISCONSIN', 'CORNELL', 'Citeseer', "Cora"]
+    keys = ['TEXAS', 'WISCONSIN', 'CORNELL']# 'Citeseer', "Cora"]
     x_axis = torch.arange(len(keys))
     ours = [bar_data[k1][k2] for k1 in keys for k2 in bar_data[k1] if k2 != 'GCN.2.node']
     base = [bar_data[k1][k2] for k1 in keys for k2 in bar_data[k1] if k2 == 'GCN.2.node']
@@ -90,6 +91,3 @@ if __name__ == "__main__":
     plt.legend()
     # plt.show()
     plt.savefig("mad-gap.pdf")
-
-
-

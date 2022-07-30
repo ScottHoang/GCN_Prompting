@@ -89,7 +89,7 @@ class BaseOptions():
         parser.add_argument('--prompt-k', type=int, default=5)
         parser.add_argument('--prompt-neighbor-cutoff', type=int, default=-1)
         parser.add_argument('--prompt-raw', action='store_true')
-        parser.add_argument('--prompt-continual', type=bool, default=False)
+        parser.add_argument('--prompt-continual', type=int, default=0)
         parser.add_argument('--prompt-temp', type=float, default=1.0)
         parser.add_argument('--prompt-distance-temp', type=float, default=1.0)
         parser.add_argument('--prompt-aggr', type=str, default='concat', choices=['concat', 'sum' , 'max', 'mean', 'edges'])
@@ -349,4 +349,3 @@ class BaseOptions():
                 cont = 'c' if args.prompt_continual else 's'
                 args.prompt_mode = f"{args.type_model}-{args.prompt_head}.{args.num_layers}-{args.prompt_layer}.{args.prompt_k}-x-{args.prompt_aggr}.{args.prompt_type}.l-{cont}"
         return args
-
